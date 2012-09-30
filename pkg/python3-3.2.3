@@ -1,0 +1,24 @@
+
+version=3.2.3
+description="Python version $version"
+depends=("gdbm-1.10")
+
+is_installed() {
+	return 1
+}
+
+build() {
+	fetch_extract "http://www.python.org/ftp/python/${version}" "Python-${version}.tar.bz2"
+
+	cd "Python-${version}"
+
+	# Version 3.2.3 required this last
+	wget "http://bugs.python.org/file24922/_posixmodule.patch"
+	patch -Np1 < _posixmodule.patch
+
+	./configure --prefix="$1" CFLAGS="-I$1/include" LDFLAGS="-L$1/usr/local/lib"
+	make
+	make install
+}
+
+# vim: set ft=sh :

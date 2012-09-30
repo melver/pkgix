@@ -1,0 +1,20 @@
+
+version=1.10
+description="gdbm"
+depends=()
+
+is_installed() {
+	return 1
+}
+
+build() {
+	fetch_extract "ftp://ftp.gnu.org/gnu/gdbm" "gdbm-${version}.tar.gz"
+
+	cd "gdbm-${version}"
+
+	./configure --prefix="$1"
+	make
+	make install
+}
+
+# vim: set ft=sh :

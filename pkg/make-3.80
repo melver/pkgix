@@ -1,0 +1,21 @@
+
+version=3.80
+description="Make version $version"
+depends=()
+
+is_installed() {
+	make -version | grep -q "$version" &> /dev/null
+}
+
+build() {
+	fetch_extract "ftp://ftp.gnu.org/gnu/make" "make-${version}.tar.bz2"
+
+	cd "make-${version}"
+
+	./configure --prefix="$1"
+	
+	make
+	make install
+}
+
+# vim: set ft=sh :

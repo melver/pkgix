@@ -1,0 +1,19 @@
+
+version=1.6.1
+description="Python 3 Numpy version $version"
+depends=("python3")
+
+is_installed() {
+	return 1
+}
+
+build() {
+	fetch_extract "http://downloads.sourceforge.net/numpy" "numpy-${version}.tar.gz"
+
+	cd "numpy-${version}"
+
+	Atlas=None LDFLAGS="-shared" python3 setup.py config_fc --fcompiler=gnu95 build
+	python3 setup.py config_fc --fcompiler=gnu95 install --prefix="$1" --optimize=1
+}
+
+# vim: set ft=sh :
