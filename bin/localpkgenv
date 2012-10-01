@@ -39,13 +39,18 @@
 # Configurable variables, settable from user environment
 [[ -z "$LOCALPKGENV_REPO_URLS" ]] && LOCALPKGENV_REPO_URLS="$(cd `dirname $0`/.. && pwd)/repo"
 [[ -z "$LOCALPKGENV_SHELL" ]] && LOCALPKGENV_SHELL="$SHELL"
+[[ -z "$LOCALPKGENV_FETCH" ]] && LOCALPKGENV_FETCH="wget"
 
 # Not settable from user environment
 INSTALLED_DB="var/lib/localpkgenv/installed"
 URL_SEP=";"
 
 msg_printf() {
-	printf "\e[0;35m[localpkgenv]\e[0m ""$@"
+	printf "\e[0;35m[localpkgenv]\e[0m ""$@" 1>&2
+}
+
+verbose_printf() {
+	(( arg_verbose == 1 )) && msg_printf "$@"
 }
 
 error_printf() {
@@ -81,7 +86,9 @@ case "$OSTYPE" in
 		}
 
 		remove_empty_dirs() {
-			find "$1" -type d -empty -delete -a -printf "deleted dir %p\n" 2> /dev/null
+			local find_extra_args
+			(( arg_verbose == 0 )) && find_extra_args=("-printf" "") || find_extra_args=("-printf" "removed '%p'\n")
+			find "$1" -type d -empty -delete "${find_extra_args[@]}"
 		}
 
 		find_printbase() {
@@ -92,7 +99,7 @@ esac
 
 extract_archive() {
   if [[ -f $1 ]] ; then
-	msg_printf "Extracting '$1' ...\n"
+	verbose_printf "Extracting '$1'...\n"
 
     case $1 in
       *.tar.bz2)   tar xjf $1   ;;
@@ -123,7 +130,7 @@ fetch() {
 	local file_name="$(basename "$url")"
 
 	if [[ ! -f "$file_name" ]]; then
-		wget "$url" || exit 1
+		$LOCALPKGENV_FETCH "$url" || exit 1
 	fi
 
 	local file_checksum_sha256=($(sha256checksum "$file_name"))
@@ -132,13 +139,13 @@ fetch() {
 	if [[ -n "$checksum_sha256" ]]; then
 		if (( arg_ignore_checksums == 0 )); then
 			if [[ "$file_checksum_sha256" != "$checksum_sha256" ]]; then
-				error_printf "Checksum of '$file_name' ($file_checksum_sha256) does not match ($checksum_sha256)!\n"
+				error_printf "Checksum of '$file_name' ($file_checksum_sha256)\n              does not match ($checksum_sha256)!\n"
 				exit 1
 			else
-				msg_printf "Checksum for '$file_name' matches.\n"
+				msg_printf "Valid checksum: $file_name\n"
 			fi
 		else
-			warning_printf "Ignoring checksum for '$file_name'.\n"
+			warning_printf "Ignoring checksum for '$file_name'...\n"
 		fi
 	else
 		if (( arg_ignore_checksums == 0 )); then
@@ -159,29 +166,47 @@ fetch_extract() {
 	extract_archive "$archive_name"
 }
 
-export_env() {
-	[[ ! -d "$1" ]] && return 1
+prompt_continue() {
+	(( arg_noconfirm == 1 )) && return 0
 
-	local base_path="$(cd "$1" &> /dev/null && pwd)"
+	local answer
 
-	export LOCALENV_ROOT="${base_path}:$LOCALENV_ROOT"
-	export PATH="${base_path}/bin:$PATH"
-	export LD_LIBRARY_PATH="${base_path}/lib:$LD_LIBRARY_PATH"
+	printf "\e[1;34mContinue ? [Y/n] \e[0m"
+	read answer
+
+	if [[ ! "$answer" =~ ^[yY]|^$ ]]; then
+		msg_printf "User aborted.\n"
+		return 1
+	fi
 
 	return 0
 }
 
-is_ref_file() {
+export_env() {
+	[[ ! -d "$1" ]] && return 1
+
+	local localenv_root="$(cd "$1" &> /dev/null && pwd)"
+
+	verbose_printf "Using environment: $localenv_root\n"
+
+	export LOCALENV_ROOT="${localenv_root}:$LOCALENV_ROOT"
+	export PATH="${localenv_root}/bin:$PATH"
+	export LD_LIBRARY_PATH="${localenv_root}/lib:$LD_LIBRARY_PATH"
+
+	return 0
+}
+
+is_pkg_pointer() {
 	[[ "$(wc -l < "$1")" =~ ^[^0-9]*0[^0-9]*$ ]]
 }
 
 source_pkg_file() {
 	local pkg_file="$1"
 
-	if is_ref_file "$pkg_file"; then
-		local ref_pkg_name="$(<$pkg_file)"
-		msg_printf "Reference to $ref_pkg_name\n"
-		source_pkg "$ref_pkg_name"
+	if is_pkg_pointer "$pkg_file"; then
+		local resolved_pkg_name="$(<$pkg_file)"
+		msg_printf "Points to $resolved_pkg_name\n"
+		source_pkg "$resolved_pkg_name"
 	else
 		. "$pkg_file"
 	fi
@@ -200,9 +225,9 @@ source_pkg() {
 			http://*|https://*)
 				local tmpfile="$(mktemp)"
 
-				msg_printf "Trying $pkg_file\n"
+				verbose_printf "Trying: $pkg_file\n"
 				if wget -q -O "$tmpfile" "$pkg_file"; then
-					msg_printf "Using \e[0;32m$pkg_file\e[0m\n"
+					msg_printf "Source: \e[0;32m$pkg_file\e[0m\n"
 					source_pkg_file "$tmpfile"
 					rm "$tmpfile"
 					break
@@ -210,9 +235,9 @@ source_pkg() {
 				rm "$tmpfile"
 				;;
 			*)
-				msg_printf "Trying $pkg_file\n"
+				verbose_printf "Trying: $pkg_file\n"
 				if [[ -f "$pkg_file" ]]; then
-					msg_printf "Using \e[0;32m$pkg_file\e[0m\n"
+					msg_printf "Source: \e[0;32m$pkg_file\e[0m\n"
 					source_pkg_file "$pkg_file"
 					break
 				fi
@@ -247,10 +272,10 @@ pkg_install() {
 		
 		if isinstalled; then
 			if (( arg_force == 0 )); then
-				msg_printf "'$pkg_name' already available outside of '$localenv_root', skipping ...\n"
+				msg_printf "'$pkg_name' already available outside of '$localenv_root', skipping...\n"
 				exit 0
 			else
-				msg_printf "Forcing installation of '$pkg_name', despite already available outside of '$localenv_root' ...\n"
+				msg_printf "Forcing installation of '$pkg_name', despite already available outside of '$localenv_root'...\n"
 			fi
 		fi
 
@@ -259,12 +284,12 @@ pkg_install() {
 				error_printf "'$pkg_name' is not compatible with your system!\n"
 				exit 1
 			else
-				warning_printf "Trying installation of '$pkg_name', despite system incompatibility ...\n"
+				warning_printf "Trying installation of '$pkg_name', despite system incompatibility...\n"
 			fi
 		fi
 
 		if (( arg_nodeps == 0 )); then
-			msg_printf "Resolving $pkg_name dependencies ...\n"
+			msg_printf "Resolving $pkg_name dependencies...\n"
 			for dep_name in ${depends[@]}; do
 				pkg_install "$localenv_root" "$dep_name"
 			done
@@ -300,54 +325,73 @@ pkg_install() {
 		popd &> /dev/null
 		(( arg_keep_build_dir == 0)) && rm -rf "$build_dir"
 
-		# As prefix is $localenv_root, the complete folder structure from / is maintained inside $install_dir
+		# Create installed database folders
 		mkdir -p "$(dirname "${localenv_root}/${INSTALLED_DB}/${pkg_name}")"
+
+		# As prefix is $localenv_root, the complete folder structure from / is maintained inside $install_dir
 		find_printbase "${install_dir}/${localenv_root}" \( -type f -o -type l \) > "${localenv_root}/${INSTALLED_DB}/${pkg_name}.files"
 		cp -rp "${install_dir}/${localenv_root}"/* "${localenv_root}"
 		rm -rf "$install_dir"
 
 		echo "$version" > "${localenv_root}/${INSTALLED_DB}/${pkg_name}.version"
 
-		printf "\e[0;36m============================================================\e[0m\n"
+		msg_printf "Done installing $pkg_name ($version)\n"
 	) || exit 1
 
 	return 0
 }
 
+pkg_uninstall() {
+	local localenv_root="$1"
+	local pkg_name="$2"
+	local install_file="${localenv_root}/${INSTALLED_DB}/${pkg_name}.files"
+	local version_file="${localenv_root}/${INSTALLED_DB}/${pkg_name}.version"
+
+	if [[ ! -f "$install_file" ]]; then
+		warning_printf "'$install_file' does not exist! Skipping...\n"
+		return 1
+	fi
+
+	msg_printf "Uninstalling $pkg_name ($(<"$version_file"))...\n"
+
+	while read filename; do
+		rm -f "${localenv_root}/$filename"
+	done < "$install_file"
+
+	remove_empty_dirs "$localenv_root"
+
+	# Remove meta files after clearing directories, otherwise our root might get deleted!
+	rm "$install_file"
+	rm "$version_file"
+
+	# Then clean up db separately
+	remove_empty_dirs "${localenv_root}/${INSTALLED_DB}"
+
+	msg_printf "Done uninstalling $pkg_name\n"
+}
+
 cmd_install() {
-	arg_force=0
-	arg_nodeps=0
-	arg_keep_build_dir=0
-	arg_ignore_checksums=0
-
-	while true; do
-		case "$1" in
-			-f|--force) arg_force=1 ; shift ;;
-			-d|--nodeps) arg_nodeps=1 ; shift ;;
-			--keep-build-dir) arg_keep_build_dir=1 ; shift ;;
-			--ignore-checksums) arg_ignore_checksums=1 ; shift ;;
-			*) break ;;
-		esac
-	done
-
 	local localenv_root="$1"
 	shift
 
 	if [[ -z "$1" ]]; then
-		msg_printf "You need to specify at least one package to install.\n"
+		error_printf "You need to specify at least one package to install.\n"
 		exit 1
 	fi
 
-	if [[ ! -d "${localenv_root}/${INSTALLED_DB}" ]]; then
-		if ! mkdir -p "${localenv_root}/${INSTALLED_DB}" 2> /dev/null; then
+	if [[ ! -d "${localenv_root}" ]]; then
+		if ! mkdir -p "${localenv_root}" 2> /dev/null; then
 			error_printf "Could not create directory '$localenv_root'!\n"
 			exit 1
 		fi
 	fi
 
 	localenv_root="$(cd "$localenv_root" && pwd)"
-
 	export_env "$localenv_root"
+
+	msg_printf "Installing into $localenv_root: $*\n"
+
+	prompt_continue || exit 1
 
 	for pkg_name in "$@"; do
 		pkg_install "$localenv_root" "$pkg_name"
@@ -356,12 +400,14 @@ cmd_install() {
 
 cmd_upgrade() {
 	local localenv_root="$1"
-	shift
 
-	if [[ ! -d "$localenv_root" ]]; then
-		error_printf "'$localenv_root' is not a valid directory!\n"
+	if [[ ! -d "${localenv_root}/${INSTALLED_DB}" ]]; then
+		error_printf "'$localenv_root' is not a valid localpkgenv root!\n"
 		exit 1
 	fi
+
+	localenv_root="$(cd "$localenv_root" && pwd)"
+	export_env "$localenv_root"
 
 	find "${localenv_root}/${INSTALLED_DB}" -type f -name "*.version" |
 	while read installed_pkg_versionfile; do
@@ -371,7 +417,7 @@ cmd_upgrade() {
 
 		if ! (
 			if ! source_pkg "$pkg_name"; then
-				warning_printf "Could not find package description file for '$pkg_name', skipping upgrade ...\n"
+				warning_printf "Could not find package description file for '$pkg_name', skipping upgrade...\n"
 				exit 0
 			fi
 
@@ -382,12 +428,14 @@ cmd_upgrade() {
 				exit 0
 			fi
 		); then
-			cmd_uninstall "$localenv_root" "$pkg_name"
-			cmd_install "$localenv_root" "$pkg_name"
+			pkg_uninstall "$localenv_root" "$pkg_name"
+			pkg_install "$localenv_root" "$pkg_name"
 		else
 			msg_printf "$pkg_name ($installed_version) is up to date\n"
 		fi
 	done
+
+	msg_printf "Done upgrading.\n"
 }
 
 cmd_uninstall() {
@@ -398,26 +446,14 @@ cmd_uninstall() {
 		error_printf "'$localenv_root' is not a valid directory!\n"
 		exit 1
 	fi
+
+	localenv_root="$(cd "$localenv_root" && pwd)"
+
+	msg_printf "Uninstalling from $localenv_root: $*\n"
+	prompt_continue || exit 1
 	
-	local install_file
 	for pkg_name in "$@"; do
-		install_file="${localenv_root}/${INSTALLED_DB}/${pkg_name}.files"
-
-		if [[ ! -f "$install_file" ]]; then
-			warning_printf "'$install_file' does not exist! Skipping ...\n"
-			continue
-		fi
-
-		msg_printf "Uninstalling $pkg_name ...\n"
-
-		while read filename; do
-			rm -fv "${localenv_root}/$filename"
-		done < "$install_file"
-
-		rm -fv "$install_file"
-		rm -fv "${localenv_root}/${INSTALLED_DB}/${pkg_name}.version"
-
-		remove_empty_dirs "$localenv_root"
+		pkg_uninstall "$localenv_root" "$pkg_name"
 	done
 }
 
@@ -426,7 +462,7 @@ cmd_avail() {
 	IFS=$URL_SEP
 
 	for repo_url in $LOCALPKGENV_REPO_URLS; do
-		echo "Available package listing for $repo_url"
+		echo "Available packages: $repo_url"
 		case "$repo_url" in
 			http://*|https://*)
 				msg_printf "Listing packages for a HTTP repository is not supported!\n"
@@ -435,36 +471,35 @@ cmd_avail() {
 				# Don't show hidden files
 				find_printbase "$repo_url" \( -type f -o -type l \) -a ! -name ".*" 2> /dev/null | sort |
 				while read pkg_name; do
-					if is_ref_file "${repo_url}/$pkg_name"; then
-						printf '%-24s -> ' "$pkg_name"
+					if is_pkg_pointer "${repo_url}/$pkg_name"; then
+						printf '%-34s -> ' "$pkg_name"
 						echo "$(<"${repo_url}/$pkg_name")"
 					else
-						printf '%-25s : ' "$pkg_name"
+						printf '%-35s : ' "$pkg_name"
 						( . "${repo_url}/$pkg_name"; echo "$description" )
 					fi
 				done
 				;;
 		esac
-		echo "----------------------------------------------------------------------"
+		echo "-------------------------------------------------------------------------------"
 	done
 
 	IFS=$old_IFS
 }
 
 cmd_list() {
-	msg_printf "Installed packages:\n"
+	msg_printf "Listing installed packages...\n"
 	for localenv_root in "$@"; do
+		[[ -d "${localenv_root}/${INSTALLED_DB}" ]] && localenv_root="$(cd "$localenv_root" && pwd)" || continue
 		if export_env "$localenv_root"; then
-			printf "[%-68s]\n" "${localenv_root%%/}"
-			if [[ -d "${localenv_root}/${INSTALLED_DB}" ]]; then
-				find "${localenv_root}/${INSTALLED_DB}" -type f -name "*.version" |
-				while read installed_pkg_versionfile; do
-					pkg_name="${installed_pkg_versionfile##${localenv_root}/${INSTALLED_DB}/}"
-					pkg_name="${pkg_name%%.version}"
-					echo "${pkg_name} ($(<$installed_pkg_versionfile))"
-				done
-			fi
-			echo "----------------------------------------------------------------------"
+			printf "\e[1;34m%-68s\e[0m\n" "$localenv_root"
+			find "${localenv_root}/${INSTALLED_DB}" -type f -name "*.version" | sort |
+			while read installed_pkg_versionfile; do
+				pkg_name="${installed_pkg_versionfile##${localenv_root}/${INSTALLED_DB}/}"
+				pkg_name="${pkg_name%%.version}"
+				printf "\e[1;34m|\e[0m ${pkg_name} ($(<$installed_pkg_versionfile))\n"
+			done
+			printf "\e[1;34m----------------------------------------------------------------------\e[0m\n"
 		fi
 	done
 }
@@ -504,12 +539,17 @@ sanitize_repo_urls() {
 }
 
 # Get command line options
+arg_verbose=0
+arg_noconfirm=0
+
 while true; do
 	case "$1" in
 		-r|--repo-urls)
 			LOCALPKGENV_REPO_URLS="$2;$LOCALPKGENV_REPO_URLS"
 			shift 2
 			;;
+		-v|--verbose) arg_verbose=1 ; shift ;;
+		-n|--noconfirm) arg_noconfirm=1 ; shift ;;
 		*)
 			break
 			;;
@@ -519,18 +559,37 @@ done
 sanitize_repo_urls
 
 case "$1" in
-	install) shift; cmd_install "$@" ;;
-	upgrade) shift; cmd_upgrade "$@" ;;
+	install|upgrade)
+		cmd=cmd_$1
+		shift
+
+		arg_force=0
+		arg_nodeps=0
+		arg_keep_build_dir=0
+		arg_ignore_checksums=0
+
+		while true; do
+			case "$1" in
+				-f|--force) arg_force=1 ; shift ;;
+				-d|--nodeps) arg_nodeps=1 ; shift ;;
+				--keep-build-dir) arg_keep_build_dir=1 ; shift ;;
+				--ignore-checksums) arg_ignore_checksums=1 ; shift ;;
+				*) break ;;
+			esac
+		done
+
+		$cmd "$@"
+		;;
 	uninstall) shift; cmd_uninstall "$@" ;;
-	avail)    shift; cmd_avail "$@" ;;
-	list) shift; cmd_list "$@" ;;
-	showenv)  shift; cmd_showenv "$@" ;;
-	chenv)  shift; cmd_chenv "$@" ;;
+	avail)     shift; cmd_avail "$@" ;;
+	list)      shift; cmd_list "$@" ;;
+	showenv)   shift; cmd_showenv "$@" ;;
+	chenv)     shift; cmd_chenv "$@" ;;
 	help)
 		case "$2" in
-			install)
+			install|upgrade)
 				cat <<EOF
-Usage: localpkgenv install [-f|--force] [-d|--nodeps] [--keep-build-dir]
+Usage: localpkgenv $2 [-f|--force] [-d|--nodeps] [--keep-build-dir]
                    [--ignore-checksums]
                    <localenv-dir> <pkgs>...
 
@@ -546,7 +605,7 @@ Options:
         Ignores checksums for remotely fetched files.
 EOF
 				;;
-			upgrade|uninstall|avail|list|showenv|chenv|help)
+			uninstall|avail|list|showenv|chenv|help)
 				echo "No further information available."
 				;;
 			*)
@@ -571,8 +630,12 @@ Options:
    -r, --repo-urls
        Specify additional package repository URL; use "$URL_SEP" to separate multiple repositories.
        Currently supported protocols are: file://, http://, https://
+   -n, --noconfirm
+       Proceed without asking the user for confirmation.
+   -v, --verbose
+       Be more verbose.
 
-See '$0 help <command>' for more information on a command.
+See 'localpkgenv help <command>' for more information on a command.
 EOF
 		;;
 esac
