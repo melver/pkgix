@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright (c) 2012, Marco Elver
 # All rights reserved.
@@ -36,7 +36,11 @@
 # Author: Marco Elver <me AT marcoelver.com>
 # Date: Sun 30 Sep 17:27:35 BST 2012
 
-[[ -z "$REPO_URLS" ]] && REPO_URLS="$(cd `dirname $0`/.. && pwd)/repo"
+# Configurable variables, settable from user environment
+[[ -z "$LOCALPKGENV_REPO_URLS" ]] && LOCALPKGENV_REPO_URLS="$(cd `dirname $0`/.. && pwd)/repo"
+[[ -z "$LOCALPKGENV_SHELL" ]] && LOCALPKGENV_SHELL="$SHELL"
+
+# Not settable from user environment
 INSTALLED_DIR="var/lib/localpkgenv/installed"
 URL_SEP=";"
 
@@ -150,7 +154,7 @@ source_pkg() {
 	local old_IFS=$IFS
 	IFS=$URL_SEP
 
-	for repo_url in $REPO_URLS; do
+	for repo_url in $LOCALPKGENV_REPO_URLS; do
 		pkg_file="${repo_url}/$pkg_name"
 
 		case "$pkg_file" in
@@ -369,7 +373,7 @@ cmd_avail() {
 	local old_IFS=$IFS
 	IFS=$URL_SEP
 
-	for repo_url in $REPO_URLS; do
+	for repo_url in $LOCALPKGENV_REPO_URLS; do
 		echo "Available package listing for $repo_url"
 		case "$repo_url" in
 			http://*|https://*)
@@ -420,29 +424,22 @@ cmd_showenv() {
 cmd_chenv() {
 	cmd_list "$@"
 
-	local script_stat=($(</proc/$$/stat))    # create an array
-	local parent_pid=${script_stat[3]}
-
 	msg_printf "Spawning shell\n"
-	if [[ -x "/proc/${parent_pid}/exe" ]]; then
-		exec "/proc/${parent_pid}/exe"
-	else
-		exec "$SHELL"
-	fi
+	exec "$LOCALPKGENV_SHELL"
 }
 
 sanitize_repo_urls() {
-	local old_repo_urls="$REPO_URLS"
+	local old_repo_urls="$LOCALPKGENV_REPO_URLS"
 	local old_IFS=$IFS
 	IFS=$URL_SEP
 
-	REPO_URLS=""
+	LOCALPKGENV_REPO_URLS=""
 
 	for url in $old_repo_urls; do
 		[[ "$url" =~ ^file:// ]] && url="${url##file://}"
 		url=${url%%/}
 
-		REPO_URLS+="${url};"
+		LOCALPKGENV_REPO_URLS+="${url};"
 	done
 
 	IFS=$old_IFS
@@ -452,7 +449,7 @@ sanitize_repo_urls() {
 while true; do
 	case "$1" in
 		-r|--repo-urls)
-			REPO_URLS="$2;$REPO_URLS"
+			LOCALPKGENV_REPO_URLS="$2;$LOCALPKGENV_REPO_URLS"
 			shift 2
 			;;
 		*)
