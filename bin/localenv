@@ -1,12 +1,44 @@
 #!/bin/bash
-#
-# bin/localenv: Localenv environment helper script.
+
+# Copyright (c) 2012, Marco Elver
+# All rights reserved.
+# 
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are
+# met:
+# 
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+# 
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the
+#    distribution.
+# 
+#  * Neither the name of localenv nor the names of its contributors
+#    may be used to endorse or promote products derived from this
+#    software without specific prior written permission.
+# 
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+# A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+# OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+# LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+# localenv: Localenv environment helper script.
 #
 # Author: Marco Elver <me AT marcoelver.com>
 # Date: Sun 30 Sep 17:27:35 BST 2012
 
 [[ -z "$PKG_URLS" ]] && PKG_URLS="$(cd `dirname $0`/.. && pwd)/pkg"
 INSTALLED_DIR="localenv-installed"
+URL_SEP=";"
 
 extract_archive() {
   if [[ -f $1 ]] ; then
@@ -60,7 +92,7 @@ source_pkg_file() {
 	local pkg_name="$1"
 	local pkg_file
 	local old_IFS=$IFS
-	IFS=";"
+	IFS=$URL_SEP
 
 	for pkg_url in $PKG_URLS; do
 		pkg_file="${pkg_url}/$pkg_name"
@@ -206,7 +238,7 @@ cmd_uninstall() {
 
 cmd_list() {
 	local old_IFS=$IFS
-	IFS=";"
+	IFS=$URL_SEP
 
 	for pkg_url in $PKG_URLS; do
 		echo "Package listing for $pkg_url"
@@ -279,7 +311,7 @@ done
 sanitize_pkg_url() {
 	local old_pkg_urls="$PKG_URLS"
 	local old_IFS=$IFS
-	IFS=";"
+	IFS=$URL_SEP
 
 	PKG_URLS=""
 
@@ -333,7 +365,7 @@ Commands available:
 
 Options:
    -p, --pkg-url
-       Specify additional package repository URL; use ";" to separate multiple repositories.
+       Specify additional package repository URL; use "$URL_SEP" to separate multiple repositories.
        Currently supported protocols are: file://, http://
 
 See '$0 help <command>' for more information on a command.
