@@ -89,6 +89,18 @@ export_env() {
 }
 
 source_pkg_file() {
+	local pkg_file="$1"
+
+	if [[ "$(wc -l "$pkg_file" | cut -d " " -f 1)" == "0" ]]; then
+		local ref_pkg_name="$(<$pkg_file)"
+		prefix_printf "Found reference to $ref_pkg_name, resolving ...\n"
+		source_pkg "$ref_pkg_name"
+	else
+		. "$pkg_file"
+	fi
+}
+
+source_pkg() {
 	local pkg_name="$1"
 	local pkg_file
 	local old_IFS=$IFS
@@ -98,13 +110,13 @@ source_pkg_file() {
 		pkg_file="${pkg_url}/$pkg_name"
 
 		case "$pkg_file" in
-			http://*)
+			http://*|https://*)
 				local tmpfile="$(mktemp)"
 
 				prefix_printf "Trying $pkg_file\n"
 				if wget -q -O "$tmpfile" "$pkg_file"; then
 					prefix_printf "Using \e[0;32m$pkg_file\e[0m\n"
-					. "$tmpfile"
+					source_pkg_file "$tmpfile"
 					rm "$tmpfile"
 					break
 				fi
@@ -114,7 +126,7 @@ source_pkg_file() {
 				prefix_printf "Trying $pkg_file\n"
 				if [[ -f "$pkg_file" ]]; then
 					prefix_printf "Using \e[0;32m$pkg_file\e[0m\n"
-					. "$pkg_file"
+					source_pkg_file "$pkg_file"
 					break
 				fi
 				;;
@@ -135,7 +147,7 @@ pkg_install() {
 	fi
 
 	(
-		source_pkg_file "$pkg_name"
+		source_pkg "$pkg_name"
 		
 		if (( arg_force == 0 )); then
 			if is_installed; then
@@ -158,8 +170,8 @@ pkg_install() {
 
 		local build_dir="${localenv_root}/.localpkgenv-build"
 		local install_dir="${localenv_root}/.localpkgenv-tmpinstall"
-		mkdir "$build_dir"
-		mkdir "$install_dir"
+		mkdir -p "$build_dir"
+		mkdir -p "$install_dir"
 
 		pushd "$build_dir" &> /dev/null
 
@@ -229,7 +241,7 @@ cmd_upgrade() {
 		installed_version="$(<$installed_pkg_versionfile)"
 
 		if ! (
-			source_pkg_file "$pkg_name"
+			source_pkg "$pkg_name"
 			if [[ "$version" != "$installed_version" ]]; then
 				exit 1
 			else
@@ -287,7 +299,7 @@ cmd_avail() {
 	for pkg_url in $PKG_URLS; do
 		echo "Available package listing for $pkg_url"
 		case "$pkg_url" in
-			http://*)
+			http://*|https://*)
 				prefix_printf "Listing packages for a HTTP repository is not supported!\n"
 				;;
 			*)
@@ -422,7 +434,7 @@ Commands available:
 Options:
    -p, --pkg-url
        Specify additional package repository URL; use "$URL_SEP" to separate multiple repositories.
-       Currently supported protocols are: file://, http://
+       Currently supported protocols are: file://, http://, https://
 
 See '$0 help <command>' for more information on a command.
 EOF
