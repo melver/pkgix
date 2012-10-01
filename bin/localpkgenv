@@ -56,6 +56,36 @@ warning_printf() {
 	msg_printf "\e[0;31mWARNING:\e[0m ""$@"
 }
 
+# OS dependent functions
+case "$OSTYPE" in
+	*freebsd*|*FreeBSD*)
+		sha256checksum() {
+			sha256 "$@"
+		}
+
+		remove_empty_dirs() {
+			warning_printf "remove_empty_dirs not yet implemented for FreeBSD\n"
+		}
+
+		find_printbase() {
+			find "$@" | sed "s:^$1::" 
+		}
+		;;
+	*|*linux*)
+		sha256checksum() {
+			sha256sum "$@"
+		}
+
+		remove_empty_dirs() {
+			find "$1" -type d -empty -delete -a -printf "deleted dir %p\n" 2> /dev/null
+		}
+
+		find_printbase() {
+			find "$@" -printf "%P\n"
+		}
+		;;
+esac
+
 extract_archive() {
   if [[ -f $1 ]] ; then
 	msg_printf "Extracting '$1' ...\n"
@@ -92,7 +122,8 @@ fetch() {
 		wget "$url" || exit 1
 	fi
 
-	local file_checksum_sha256="$(sha256sum "$file_name" | cut -d " " -f 1)"
+	local file_checksum_sha256=($(sha256checksum "$file_name"))
+	file_checksum_sha256="${file_checksum_sha256[0]}"
 
 	if [[ -n "$checksum_sha256" ]]; then
 		if (( arg_ignore_checksums == 0 )); then
@@ -139,7 +170,7 @@ export_env() {
 source_pkg_file() {
 	local pkg_file="$1"
 
-	if [[ "$(wc -l "$pkg_file" | cut -d " " -f 1)" == "0" ]]; then
+	if [[ "$(wc -l < "$pkg_file")" =~ ^[^0-9]*0[^0-9]*$ ]]; then
 		local ref_pkg_name="$(<$pkg_file)"
 		msg_printf "Found reference to $ref_pkg_name, resolving ...\n"
 		source_pkg "$ref_pkg_name"
@@ -247,7 +278,7 @@ pkg_install() {
 		(( arg_keep_build_dir == 0)) && rm -rf "$build_dir"
 
 		# As prefix is $localenv_root, the complete folder structure from / is maintained inside $install_dir
-		find "${install_dir}/${localenv_root}" \( -type f -o -type l \) -printf "%P\n" > "${localenv_root}/${INSTALLED_DIR}/${pkg_name}.files"
+		find_printbase "${install_dir}/${localenv_root}" \( -type f -o -type l \) > "${localenv_root}/${INSTALLED_DIR}/${pkg_name}.files"
 		cp -rp "${install_dir}/${localenv_root}"/* "${localenv_root}"
 		rm -rf "$install_dir"
 
@@ -334,10 +365,6 @@ cmd_upgrade() {
 	done
 }
 
-remove_empty_dirs() {
-	find "$1" -type d -empty -delete -a -printf "deleted dir %p\n" 2> /dev/null
-}
-
 cmd_uninstall() {
 	local localenv_root="$1"
 	shift
@@ -381,7 +408,7 @@ cmd_avail() {
 				;;
 			*)
 				# Don't show hidden files
-				find "$repo_url" \( -type f -o -type l \) -a ! -name ".*" -printf "%P\n" 2> /dev/null | sort |
+				find_printbase "$repo_url" \( -type f -o -type l \) -a ! -name ".*" 2> /dev/null | sort |
 				while read pkg_name; do
 					printf '%-25s : ' "$pkg_name"
 					( . "${repo_url}/$pkg_name"; echo "$description" )
