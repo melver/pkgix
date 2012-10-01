@@ -313,7 +313,7 @@ cmd_avail() {
 				;;
 			*)
 				# Don't show hidden files
-				find "$repo_url" \( -type f -o -type l \) -a ! -name ".*" -printf "%P\n" | sort |
+				find "$repo_url" \( -type f -o -type l \) -a ! -name ".*" -printf "%P\n" 2> /dev/null | sort |
 				while read pkg_name; do
 					printf '%-25s : ' "$pkg_name"
 					( . "${repo_url}/$pkg_name"; echo "$description" )
