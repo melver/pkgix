@@ -8,7 +8,8 @@ is_installed() {
 }
 
 build() {
-	fetch_extract "ftp://ftp.gnu.org/gnu/gdbm" "gdbm-${version}.tar.gz"
+	fetch_extract "ftp://ftp.gnu.org/gnu/gdbm/gdbm-${version}.tar.gz" \
+		"23f8134c5b94bbfb06d756a6b78f074fba6e6028cf2fe01341d40b26db773441"
 
 	cd "gdbm-${version}"
 

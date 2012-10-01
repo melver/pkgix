@@ -40,40 +40,84 @@
 INSTALLED_DIR="var/lib/localpkgenv/installed"
 URL_SEP=";"
 
+msg_printf() {
+	printf "\e[0;35m[localpkgenv]\e[0m ""$@"
+}
+
+error_printf() {
+	msg_printf "\e[0;31mERROR:\e[0m ""$@"
+}
+
+warning_printf() {
+	msg_printf "\e[0;31mWARNING:\e[0m ""$@"
+}
+
 extract_archive() {
   if [[ -f $1 ]] ; then
+	msg_printf "Extracting '$1' ...\n"
+
     case $1 in
-      *.tar.bz2)   tar xvvjf $1   ;;
-      *.tar.gz)    tar xvvzf $1   ;;
-      *.tar.lzma)  tar --lzma -xvvf $1 ;;
-      *.tar.xz)    tar xvvJf $1   ;;
-      *.tar)       tar xvvf $1    ;;
-      *.tbz2)      tar xvvjf $1   ;;
-      *.tgz)       tar xvvzf $1   ;;
-      *.txz)       tar xvvJf $1   ;;
+      *.tar.bz2)   tar xjf $1   ;;
+      *.tar.gz)    tar xzf $1   ;;
+      *.tar.lzma)  tar --lzma -xf $1 ;;
+      *.tar.xz)    tar xJf $1   ;;
+      *.tar)       tar xf $1    ;;
+      *.tbz2)      tar xjf $1   ;;
+      *.tgz)       tar xzf $1   ;;
+      *.txz)       tar xJf $1   ;;
       *.bz2)       bunzip2 $1    ;;
       *.rar)       unrar x $1    ;;
       *.gz)        gunzip $1     ;;
       *.zip)       unzip $1      ;;
       *.Z)         uncompress $1 ;;
       *.7z)        7z x $1       ;;
-      *)           echo "'$1' cannot be extracted (format unknown) !" ;;
+      *)           error_printf "'$1' cannot be extracted (format unknown) !\n" ; exit 1 ;;
     esac
   else
-    echo "'$1' is not a valid file !"
+    error_printf "'$1' is not a valid file !\n"
+	exit 1
   fi
 }
 
-fetch_extract() {
-	local base_url="$1"
-	local archive_name="$2"
+fetch() {
+	local url="$1"
+	local checksum_sha256="$2"
+	local file_name="$(basename "$url")"
 
-	[[ ! -f "$archive_name" ]] && wget "${base_url}/$archive_name"
-	extract_archive "$archive_name"
+	if [[ ! -f "$file_name" ]]; then
+		wget "$url" || exit 1
+	fi
+
+	local file_checksum_sha256="$(sha256sum "$file_name" | cut -d " " -f 1)"
+
+	if [[ -n "$checksum_sha256" ]]; then
+		if (( arg_ignore_checksums == 0 )); then
+			if [[ "$file_checksum_sha256" != "$checksum_sha256" ]]; then
+				error_printf "Checksum of '$file_name' ($file_checksum_sha256) does not match ($checksum_sha256)!\n"
+				exit 1
+			else
+				msg_printf "Checksum for '$file_name' matches.\n"
+			fi
+		else
+			warning_printf "Ignoring checksum for '$file_name'.\n"
+		fi
+	else
+		if (( arg_ignore_checksums == 0 )); then
+			error_printf "No checksum for '$file_name' ($file_checksum_sha256)!\n"
+			exit 1
+		else
+			warning_printf "No checksum for '$file_name' ($file_checksum_sha256)!\n"
+		fi
+	fi
 }
 
-prefix_printf() {
-	printf "\e[0;35m[localpkgenv]\e[0m ""$@"
+fetch_extract() {
+	local url="$1"
+	local checksum_sha256="$2"
+	local archive_name="$(basename "$url")"
+
+	fetch "$url" "$checksum_sha256"
+	extract_archive "$archive_name"
 }
 
 export_env() {
@@ -93,7 +137,7 @@ source_pkg_file() {
 
 	if [[ "$(wc -l "$pkg_file" | cut -d " " -f 1)" == "0" ]]; then
 		local ref_pkg_name="$(<$pkg_file)"
-		prefix_printf "Found reference to $ref_pkg_name, resolving ...\n"
+		msg_printf "Found reference to $ref_pkg_name, resolving ...\n"
 		source_pkg "$ref_pkg_name"
 	else
 		. "$pkg_file"
@@ -113,9 +157,9 @@ source_pkg() {
 			http://*|https://*)
 				local tmpfile="$(mktemp)"
 
-				prefix_printf "Trying $pkg_file\n"
+				msg_printf "Trying $pkg_file\n"
 				if wget -q -O "$tmpfile" "$pkg_file"; then
-					prefix_printf "Using \e[0;32m$pkg_file\e[0m\n"
+					msg_printf "Using \e[0;32m$pkg_file\e[0m\n"
 					source_pkg_file "$tmpfile"
 					rm "$tmpfile"
 					break
@@ -123,9 +167,9 @@ source_pkg() {
 				rm "$tmpfile"
 				;;
 			*)
-				prefix_printf "Trying $pkg_file\n"
+				msg_printf "Trying $pkg_file\n"
 				if [[ -f "$pkg_file" ]]; then
-					prefix_printf "Using \e[0;32m$pkg_file\e[0m\n"
+					msg_printf "Using \e[0;32m$pkg_file\e[0m\n"
 					source_pkg_file "$pkg_file"
 					break
 				fi
@@ -141,37 +185,39 @@ source_pkg() {
 pkg_install() {
 	local localenv_root="$1"
 	local pkg_name="$2"
-	local arg_force="${3:-0}"
 
 	if [[ -f "${localenv_root}/${INSTALLED_DIR}/${pkg_name}.version" ]]; then
-		prefix_printf "$pkg_name is available\n"
+		msg_printf "$pkg_name is available\n"
 		return 0
 	fi
 
 	(
 		if ! source_pkg "$pkg_name"; then
-			prefix_printf "ERROR: Could not find package description file for '$pkg_name'!\n"
+			error_printf "Could not find package description file for '$pkg_name'!\n"
 			exit 1
 		fi
 		
 		if (( arg_force == 0 )); then
 			if is_installed; then
-				prefix_printf "'$pkg_name' already available outside of '$localenv_root', skipping ...\n"
+				msg_printf "'$pkg_name' already available outside of '$localenv_root', skipping ...\n"
 				exit 0
 			fi
 		else
 			if is_installed; then
-				prefix_printf "Forcing installation of '$pkg_name', despite already available outside of '$localenv_root' ...\n"
+				msg_printf "Forcing installation of '$pkg_name', despite already available outside of '$localenv_root' ...\n"
 			fi
 		fi
 
-		prefix_printf "Resolving $pkg_name dependencies ...\n"
+		if (( arg_nodeps == 0 )); then
+			msg_printf "Resolving $pkg_name dependencies ...\n"
+			for dep_name in ${depends[@]}; do
+				pkg_install "$localenv_root" "$dep_name"
+			done
+		else
+			warning_printf "Ignoring dependencies.\n"
+		fi
 
-		for dep_name in ${depends[@]}; do
-			pkg_install "$localenv_root" "$dep_name" "$arg_force"
-		done
-
-		prefix_printf "Installing $pkg_name ($version)\n"
+		msg_printf "Installing $pkg_name ($version)\n"
 
 		local build_dir="${localenv_root}/.localpkgenv-build"
 		local install_dir="${localenv_root}/.localpkgenv-tmpinstall"
@@ -182,14 +228,14 @@ pkg_install() {
 
 		if ! build "$localenv_root" "$install_dir" ; then
 			popd &> /dev/null
-			rm -rf "$build_dir"
+			(( arg_keep_build_dir == 0)) && rm -rf "$build_dir"
 			rm -rf "$install_dir"
-			prefix_printf "ERROR: Installation of '$pkg_name' failed! Aborting.\n"
+			error_printf "Installation of '$pkg_name' failed! Aborting.\n"
 			exit 1
 		fi
 
 		popd &> /dev/null
-		rm -rf "$build_dir"
+		(( arg_keep_build_dir == 0)) && rm -rf "$build_dir"
 
 		# As prefix is $localenv_root, the complete folder structure from / is maintained inside $install_dir
 		find "${install_dir}/${localenv_root}" \( -type f -o -type l \) -printf "%P\n" > "${localenv_root}/${INSTALLED_DIR}/${pkg_name}.files"
@@ -205,10 +251,17 @@ pkg_install() {
 }
 
 cmd_install() {
-	local arg_force=0
+	arg_force=0
+	arg_nodeps=0
+	arg_keep_build_dir=0
+	arg_ignore_checksums=0
+
 	while true; do
 		case "$1" in
 			-f|--force) arg_force=1 ; shift ;;
+			-d|--nodeps) arg_nodeps=1 ; shift ;;
+			--keep-build-dir) arg_keep_build_dir=1 ; shift ;;
+			--ignore-checksums) arg_ignore_checksums=1 ; shift ;;
 			*) break ;;
 		esac
 	done
@@ -217,7 +270,7 @@ cmd_install() {
 	shift
 
 	if [[ -z "$1" ]]; then
-		prefix_printf "You need to specify at least one package to install.\n"
+		msg_printf "You need to specify at least one package to install.\n"
 		exit 1
 	fi
 
@@ -227,13 +280,13 @@ cmd_install() {
 	export_env "$localenv_root"
 
 	for pkg_name in "$@"; do
-		pkg_install "$localenv_root" "$pkg_name" "$arg_force"
+		pkg_install "$localenv_root" "$pkg_name"
 	done
 }
 
 cmd_upgrade() {
 	if [[ ! -d "$1" ]]; then
-		prefix_printf "ERROR: '$1' is not a valid directory!\n"
+		error_printf "'$1' is not a valid directory!\n"
 		exit 1
 	fi
 
@@ -247,12 +300,12 @@ cmd_upgrade() {
 
 		if ! (
 			if ! source_pkg "$pkg_name"; then
-				prefix_printf "WARNING: Could not find package description file for '$pkg_name', skipping upgrade ...\n"
+				warning_printf "Could not find package description file for '$pkg_name', skipping upgrade ...\n"
 				exit 0
 			fi
 
 			if [[ "$version" != "$installed_version" ]]; then
-				prefix_printf "\e[0;33mUpgrading\e[0m $pkg_name ($installed_version -> $version)\n"
+				msg_printf "\e[0;33mUpgrading\e[0m $pkg_name ($installed_version -> $version)\n"
 				exit 1
 			else
 				exit 0
@@ -261,7 +314,7 @@ cmd_upgrade() {
 			cmd_uninstall "$localenv_root" "$pkg_name"
 			cmd_install "$localenv_root" "$pkg_name"
 		else
-			prefix_printf "$pkg_name ($installed_version) is up to date\n"
+			msg_printf "$pkg_name ($installed_version) is up to date\n"
 		fi
 	done
 }
@@ -272,7 +325,7 @@ remove_empty_dirs() {
 
 cmd_uninstall() {
 	if [[ ! -d "$1" ]]; then
-		prefix_printf "ERROR: '$1' is not a valid directory!\n"
+		error_printf "'$1' is not a valid directory!\n"
 		exit 1
 	fi
 
@@ -284,11 +337,11 @@ cmd_uninstall() {
 		install_file="${localenv_root}/${INSTALLED_DIR}/${pkg_name}.files"
 
 		if [[ ! -f "$install_file" ]]; then
-			prefix_printf "WARNING: '$install_file' does not exist! Skipping ...\n"
+			warning_printf "'$install_file' does not exist! Skipping ...\n"
 			continue
 		fi
 
-		prefix_printf "Uninstalling $pkg_name ...\n"
+		msg_printf "Uninstalling $pkg_name ...\n"
 
 		while read filename; do
 			rm -fv "${localenv_root}/$filename"
@@ -309,7 +362,7 @@ cmd_avail() {
 		echo "Available package listing for $repo_url"
 		case "$repo_url" in
 			http://*|https://*)
-				prefix_printf "Listing packages for a HTTP repository is not supported!\n"
+				msg_printf "Listing packages for a HTTP repository is not supported!\n"
 				;;
 			*)
 				# Don't show hidden files
@@ -327,7 +380,7 @@ cmd_avail() {
 }
 
 cmd_list() {
-	prefix_printf "Installed packages:\n"
+	msg_printf "Installed packages:\n"
 	for localenv_root in "$@"; do
 		if export_env "$localenv_root"; then
 			printf "[%-68s]\n" "${localenv_root%%/}"
@@ -359,7 +412,7 @@ cmd_chenv() {
 	local script_stat=($(</proc/$$/stat))    # create an array
 	local parent_pid=${script_stat[3]}
 
-	prefix_printf "Spawning shell\n"
+	msg_printf "Spawning shell\n"
 	if [[ -x "/proc/${parent_pid}/exe" ]]; then
 		exec "/proc/${parent_pid}/exe"
 	else
@@ -411,12 +464,20 @@ case "$1" in
 		case "$2" in
 			install)
 				cat <<EOF
-Usage: $0 install [-f|--force] <localenv-dir> <pkgs>...
+Usage: localpkgenv install [-f|--force] [-d|--nodeps] [--keep-build-dir]
+                   [--ignore-checksums]
+                   <localenv-dir> <pkgs>...
 
 Options:
     -f, --force
         Force installation of programs that are already available outside of
         <localenv-dir>.
+    -d, --nodeps
+        Ignore dependenciy check and do not install dependencies.
+    --keep-build-dir
+        Keeps the build directory.
+    --ignore-checksums
+        Ignores checksums for remotely fetched files.
 EOF
 				;;
 			upgrade|uninstall|avail|list|showenv|chenv|help)
@@ -429,7 +490,7 @@ EOF
 		;;
 	*)
 		cat <<EOF
-Usage: $0 [-p|--pkgpath] <command> [<args>]
+Usage: localpkgenv [-p|--pkgpath] <command> [<args>]
 
 Commands available:
     install    Install a package in a local environment
