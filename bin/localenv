@@ -134,12 +134,12 @@ pkg_install() {
 		
 		if (( arg_force == 0 )); then
 			if is_installed; then
-				localenv_printf "$pkg_name is already installed, skipping ...\n"
+				localenv_printf "$pkg_name already available, skipping ...\n"
 				exit 0
 			fi
 		else
 			if is_installed; then
-				localenv_printf "Forcing installation of $pkg_name, despite already installed ...\n"
+				localenv_printf "Forcing installation of $pkg_name, despite already available ...\n"
 			fi
 		fi
 
@@ -166,10 +166,11 @@ pkg_install() {
 		rm -rf "$build_dir"
 
 		local tmpfile="$(mktemp)"
-		cat "${localenv_root}/${INSTALLED_DIR}"/* > "$tmpfile" 2> /dev/null
+		find "${localenv_root}/${INSTALLED_DIR}" -type f -name "*.files" | xargs cat > "$tmpfile" 2> /dev/null
 		find "$localenv_root" -type f -printf "%P\n" | grep -v -f "$tmpfile" |
-			grep -v "^$INSTALLED_DIR" > "${localenv_root}/${INSTALLED_DIR}/$pkg_name"
+			grep -v "^$INSTALLED_DIR" > "${localenv_root}/${INSTALLED_DIR}/${pkg_name}.files"
 		rm "$tmpfile"
+		echo "$version" > "${localenv_root}/${INSTALLED_DIR}/${pkg_name}.version"
 
 		printf "\e[0;36m============================================================\e[0m\n"
 	) || exit 1
@@ -198,7 +199,43 @@ cmd_install() {
 	export_env "$localenv_root"
 
 	for pkg_name in "$@"; do
+		if [[ -f "${localenv_root}/${INSTALLED_DIR}/${pkg_name}.version" ]]; then
+			localenv_printf "$pkg_name already installed, skipping ...\n"
+			continue
+		fi
+
 		pkg_install "$localenv_root" "$pkg_name" "$arg_force"
+	done
+}
+
+cmd_upgrade() {
+	if [[ ! -d "$1" ]]; then
+		localenv_printf "ERROR: $1 is not a valid directory!\n"
+		exit 1
+	fi
+
+	local localenv_root="$1"
+	shift
+
+	find "${localenv_root}/${INSTALLED_DIR}" -type f -name "*.version" |
+	while read installed_pkg_versionfile; do
+		pkg_name="$(basename "$installed_pkg_versionfile" ".version")"
+		installed_version="$(<$installed_pkg_versionfile)"
+
+		if ! (
+			source_pkg_file "$pkg_name"
+			if [[ "$version" != "$installed_version" ]]; then
+				exit 1
+			else
+				exit 0
+			fi
+		); then
+			localenv_printf "\e[0;33mUpgrading\e[0m $pkg_name\n"
+			cmd_uninstall "$localenv_root" "$pkg_name"
+			cmd_install "$localenv_root" "$pkg_name"
+		else
+			localenv_printf "$pkg_name ($installed_version) is up to date\n"
+		fi
 	done
 }
 
@@ -217,7 +254,7 @@ cmd_uninstall() {
 	local install_file
 	
 	for pkg_name in "$@"; do
-		install_file="${localenv_root}/${INSTALLED_DIR}/$pkg_name"
+		install_file="${localenv_root}/${INSTALLED_DIR}/${pkg_name}.files"
 
 		if [[ ! -f "$install_file" ]]; then
 			localenv_printf "WARNING: $install_file does not exist! Skipping ...\n"
@@ -231,17 +268,18 @@ cmd_uninstall() {
 		done < "$install_file"
 
 		rm -fv "$install_file"
+		rm -fv "${localenv_root}/${INSTALLED_DIR}/${pkg_name}.version"
 
 		remove_empty_dirs "$localenv_root"
 	done
 }
 
-cmd_list() {
+cmd_avail() {
 	local old_IFS=$IFS
 	IFS=$URL_SEP
 
 	for pkg_url in $PKG_URLS; do
-		echo "Package listing for $pkg_url"
+		echo "Available package listing for $pkg_url"
 		case "$pkg_url" in
 			http://*)
 				localenv_printf "Listing packages for a HTTP repository is not supported!\n"
@@ -261,9 +299,26 @@ cmd_list() {
 	IFS=$old_IFS
 }
 
+cmd_list() {
+	localenv_printf "Installed packages:\n"
+	for localenv_root in "$@"; do
+		if export_env "$localenv_root"; then
+			printf "[%-68s]\n" "${localenv_root%%/}"
+			if [[ -d "${localenv_root}/${INSTALLED_DIR}" ]]; then
+				find "${localenv_root}/${INSTALLED_DIR}" -type f -name "*.version" |
+				while read installed_pkg_versionfile; do
+					installed_pkg_name="$(basename "$installed_pkg_versionfile" ".version")"
+					echo "${installed_pkg_name} ($(<$installed_pkg_versionfile))"
+				done
+			fi
+			echo "----------------------------------------------------------------------"
+		fi
+	done
+}
+
 cmd_showenv() {
-	for localenv_dir in "$@"; do
-		export_env "$localenv_dir"
+	for localenv_root in "$@"; do
+		export_env "$localenv_root"
 	done
 
 	echo "export LOCALENV_ROOT=\"$LOCALENV_ROOT\""
@@ -272,22 +327,12 @@ cmd_showenv() {
 }
 
 cmd_chenv() {
-	for localenv_dir in "$@"; do
-		if export_env "$localenv_dir"; then
-			printf "[%-68s]\n" "${localenv_dir%%/}"
-			if [[ -d "${localenv_dir}/${INSTALLED_DIR}" ]]; then
-				ls -1 "${localenv_dir}/${INSTALLED_DIR}" |
-				while read installed_pkg_name; do
-					echo "$installed_pkg_name"
-				done
-			fi
-			echo "----------------------------------------------------------------------"
-		fi
-	done
+	cmd_list "$@"
 
 	local script_stat=($(</proc/$$/stat))    # create an array
 	local parent_pid=${script_stat[3]}
 
+	localenv_printf "Spawning shell\n"
 	if [[ -x "/proc/${parent_pid}/exe" ]]; then
 		exec "/proc/${parent_pid}/exe"
 	else
@@ -329,8 +374,10 @@ sanitize_pkg_url
 
 case "$1" in
 	install) shift; cmd_install "$@" ;;
+	upgrade) shift; cmd_upgrade "$@" ;;
 	uninstall) shift; cmd_uninstall "$@" ;;
-	list)    shift; cmd_list "$@" ;;
+	avail)    shift; cmd_avail "$@" ;;
+	list) shift; cmd_list "$@" ;;
 	showenv)  shift; cmd_showenv "$@" ;;
 	chenv)  shift; cmd_chenv "$@" ;;
 	help)
@@ -344,11 +391,11 @@ Options:
         Force reinstallation of already installed programs.
 EOF
 				;;
-			uninstall|list|showenv|chenv|help)
+			upgrade|uninstall|avail|list|showenv|chenv|help)
 				echo "No further information available."
 				;;
 			*)
-				echo "Please specify command."
+				echo "Please specify valid command."
 				;;
 		esac
 		;;
@@ -357,9 +404,11 @@ EOF
 Usage: $0 [-p|--pkgpath] <command> [<args>]
 
 Commands available:
-    install    Install a program in a local environment
-    uninstall  Uninstall an installed program
-    list       List available programs
+    install    Install a package in a local environment
+    upgrade    Upgrade a local environment
+    uninstall  Uninstall an installed package
+    avail      List packages available to install
+    list       List installed packages in environments
     showenv    Show local environment parameters
     chenv      Switch to a local environment
 
