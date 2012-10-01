@@ -29,3 +29,12 @@ $ localpkgenv chenv old-build-tools
 $ localpkgenv -p https://raw.github.com/melver/localpkgenv/master/pkg install oldgcc gcc-4.4
 ```
 
+## Repositories
+
+The provided repo/ directory found with localpkgenv should only serve as an
+example of how to write package description files.
+
+List of known repository URLs:
+
+1. github.com/melver/localpkgenv-repo: https://raw.github.com/melver/localpkgenv-repo/master/repo
+
