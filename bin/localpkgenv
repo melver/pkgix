@@ -186,6 +186,11 @@ pkg_install() {
 	local localenv_root="$1"
 	local pkg_name="$2"
 
+	if [[ ! -d "$localenv_root" ]]; then
+		error_printf "'$localenv_root' is not a valid directory!\n"
+		exit 1
+	fi
+
 	if [[ -f "${localenv_root}/${INSTALLED_DIR}/${pkg_name}.version" ]]; then
 		msg_printf "$pkg_name is available\n"
 		return 0
@@ -274,7 +279,13 @@ cmd_install() {
 		exit 1
 	fi
 
-	[[ ! -d "${localenv_root}/${INSTALLED_DIR}" ]] && mkdir -p "${localenv_root}/${INSTALLED_DIR}"
+	if [[ ! -d "${localenv_root}/${INSTALLED_DIR}" ]]; then
+		if ! mkdir -p "${localenv_root}/${INSTALLED_DIR}" 2> /dev/null; then
+			error_printf "Could not create directory '$localenv_root'!\n"
+			exit 1
+		fi
+	fi
+
 	localenv_root="$(cd "$localenv_root" && pwd)"
 
 	export_env "$localenv_root"
@@ -285,13 +296,13 @@ cmd_install() {
 }
 
 cmd_upgrade() {
-	if [[ ! -d "$1" ]]; then
-		error_printf "'$1' is not a valid directory!\n"
-		exit 1
-	fi
-
 	local localenv_root="$1"
 	shift
+
+	if [[ ! -d "$localenv_root" ]]; then
+		error_printf "'$localenv_root' is not a valid directory!\n"
+		exit 1
+	fi
 
 	find "${localenv_root}/${INSTALLED_DIR}" -type f -name "*.version" |
 	while read installed_pkg_versionfile; do
@@ -324,15 +335,15 @@ remove_empty_dirs() {
 }
 
 cmd_uninstall() {
-	if [[ ! -d "$1" ]]; then
-		error_printf "'$1' is not a valid directory!\n"
-		exit 1
-	fi
-
 	local localenv_root="$1"
 	shift
-	local install_file
+
+	if [[ ! -d "$localenv_root" ]]; then
+		error_printf "'$localenv_root' is not a valid directory!\n"
+		exit 1
+	fi
 	
+	local install_file
 	for pkg_name in "$@"; do
 		install_file="${localenv_root}/${INSTALLED_DIR}/${pkg_name}.files"
 
