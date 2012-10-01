@@ -17,7 +17,7 @@ build() {
 	fetch "http://bugs.python.org/file24922/_posixmodule.patch" "493a1d8257b1aa4eb54266b95e3e272aa3be2cc9db1bcfc00e61cb6385146af5"
 	patch -Np1 < _posixmodule.patch
 
-	./configure --prefix="$1" CFLAGS="-I$1/include" LDFLAGS="-L$1/usr/local/lib"
+	./configure --prefix="$1" CFLAGS="-I$1/include" LDFLAGS="-L$1/lib"
 	make
 	make DESTDIR="$2" install
 }
