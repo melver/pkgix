@@ -59,6 +59,8 @@ warning_printf() {
 # OS dependent functions
 case "$OSTYPE" in
 	*freebsd*|*FreeBSD*)
+		platform="freebsd"
+
 		sha256checksum() {
 			sha256 "$@"
 		}
@@ -72,6 +74,8 @@ case "$OSTYPE" in
 		}
 		;;
 	*|*linux*)
+		platform="$OSTYPE"
+
 		sha256checksum() {
 			sha256sum "$@"
 		}
@@ -237,14 +241,21 @@ pkg_install() {
 			exit 1
 		fi
 		
-		if (( arg_force == 0 )); then
-			if is_installed; then
+		if isinstalled; then
+			if (( arg_force == 0 )); then
 				msg_printf "'$pkg_name' already available outside of '$localenv_root', skipping ...\n"
 				exit 0
-			fi
-		else
-			if is_installed; then
+			else
 				msg_printf "Forcing installation of '$pkg_name', despite already available outside of '$localenv_root' ...\n"
+			fi
+		fi
+
+		if ! iscompat; then
+			if (( arg_force == 0 )); then
+				error_printf "'$pkg_name' is not compatible with your system!\n"
+				exit 1
+			else
+				warning_printf "Trying installation of '$pkg_name', despite system incompatibility ...\n"
 			fi
 		fi
 
@@ -257,7 +268,7 @@ pkg_install() {
 			warning_printf "Ignoring dependencies.\n"
 		fi
 
-		msg_printf "Installing $pkg_name ($version)\n"
+		msg_printf "Setting up $pkg_name ($version)\n"
 
 		local build_dir="${localenv_root}/.localpkgenv-build"
 		local install_dir="${localenv_root}/.localpkgenv-tmpinstall"
@@ -267,6 +278,14 @@ pkg_install() {
 		pushd "$build_dir" &> /dev/null
 
 		if ! build "$localenv_root" "$install_dir" ; then
+			popd &> /dev/null
+			(( arg_keep_build_dir == 0)) && rm -rf "$build_dir"
+			rm -rf "$install_dir"
+			error_printf "Building '$pkg_name' failed! Aborting.\n"
+			exit 1
+		fi
+
+		if ! installenv "$localenv_root" "$install_dir" ; then
 			popd &> /dev/null
 			(( arg_keep_build_dir == 0)) && rm -rf "$build_dir"
 			rm -rf "$install_dir"
@@ -505,8 +524,8 @@ Usage: localpkgenv install [-f|--force] [-d|--nodeps] [--keep-build-dir]
 
 Options:
     -f, --force
-        Force installation of programs that are already available outside of
-        <localenv-dir>.
+        Force installation of programs that are: already available outside of
+        <localenv-dir>; incompatible with the current system.
     -d, --nodeps
         Ignore dependenciy check and do not install dependencies.
     --keep-build-dir

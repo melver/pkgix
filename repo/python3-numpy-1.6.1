@@ -3,8 +3,12 @@ version=1.6.1
 description="Python 3 Numpy version $version"
 depends=("python3")
 
-is_installed() {
+isinstalled() {
 	return 1
+}
+
+iscompat() {
+	return 0
 }
 
 build() {
@@ -14,6 +18,9 @@ build() {
 	cd "numpy-${version}"
 
 	Atlas=None LDFLAGS="-shared" python3 setup.py config_fc --fcompiler=gnu95 build
+}
+
+installenv() {
 	python3 setup.py config_fc --fcompiler=gnu95 install --prefix="$1" --root="$2" --optimize=1
 }
 

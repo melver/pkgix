@@ -3,8 +3,12 @@ version=4.4.7
 description="The GCC compiler version $version"
 depends=()
 
-is_installed() {
+isinstalled() {
 	gcc --version | grep -q "$version" &> /dev/null
+}
+
+iscompat() {
+	return 0
 }
 
 build() {
@@ -34,6 +38,9 @@ build() {
 		--with-system-zlib
 
 	make
+}
+
+installenv() {
 	make DESTDIR="$2" install
 }
 

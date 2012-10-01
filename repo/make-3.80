@@ -3,8 +3,12 @@ version=3.80
 description="Make version $version"
 depends=()
 
-is_installed() {
+isinstalled() {
 	make -version | grep -q "$version" &> /dev/null
+}
+
+iscompat() {
+	return 0
 }
 
 build() {
@@ -16,6 +20,9 @@ build() {
 	./configure --prefix="$1"
 	
 	make
+}
+
+installenv() {
 	make DESTDIR="$2" install
 }
 

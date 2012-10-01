@@ -3,8 +3,12 @@ version=3.2.3
 description="Python version $version"
 depends=("gdbm-1.10")
 
-is_installed() {
+isinstalled() {
 	return 1
+}
+
+iscompat() {
+	return 0
 }
 
 build() {
@@ -19,6 +23,9 @@ build() {
 
 	./configure --prefix="$1" CFLAGS="-I$1/include" LDFLAGS="-L$1/lib"
 	make
+}
+
+installenv() {
 	make DESTDIR="$2" install
 }
 
