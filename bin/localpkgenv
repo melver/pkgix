@@ -36,7 +36,7 @@
 # Author: Marco Elver <me AT marcoelver.com>
 # Date: Sun 30 Sep 17:27:35 BST 2012
 
-[[ -z "$PKG_URLS" ]] && PKG_URLS="$(cd `dirname $0`/.. && pwd)/pkg"
+[[ -z "$REPO_URLS" ]] && REPO_URLS="$(cd `dirname $0`/.. && pwd)/repo"
 INSTALLED_DIR="var/lib/localpkgenv/installed"
 URL_SEP=";"
 
@@ -106,8 +106,8 @@ source_pkg() {
 	local old_IFS=$IFS
 	IFS=$URL_SEP
 
-	for pkg_url in $PKG_URLS; do
-		pkg_file="${pkg_url}/$pkg_name"
+	for repo_url in $REPO_URLS; do
+		pkg_file="${repo_url}/$pkg_name"
 
 		case "$pkg_file" in
 			http://*|https://*)
@@ -134,6 +134,8 @@ source_pkg() {
 	done
 
 	IFS=$old_IFS
+
+	[[ -n "$version" ]]
 }
 
 pkg_install() {
@@ -147,16 +149,19 @@ pkg_install() {
 	fi
 
 	(
-		source_pkg "$pkg_name"
+		if ! source_pkg "$pkg_name"; then
+			prefix_printf "ERROR: Could not find package description file for '$pkg_name'!\n"
+			exit 1
+		fi
 		
 		if (( arg_force == 0 )); then
 			if is_installed; then
-				prefix_printf "$pkg_name already available outside of $localenv_root, skipping ...\n"
+				prefix_printf "'$pkg_name' already available outside of '$localenv_root', skipping ...\n"
 				exit 0
 			fi
 		else
 			if is_installed; then
-				prefix_printf "Forcing installation of $pkg_name, despite already available outside of $localenv_root ...\n"
+				prefix_printf "Forcing installation of '$pkg_name', despite already available outside of '$localenv_root' ...\n"
 			fi
 		fi
 
@@ -166,7 +171,7 @@ pkg_install() {
 			pkg_install "$localenv_root" "$dep_name" "$arg_force"
 		done
 
-		prefix_printf "Installing $pkg_name\n"
+		prefix_printf "Installing $pkg_name ($version)\n"
 
 		local build_dir="${localenv_root}/.localpkgenv-build"
 		local install_dir="${localenv_root}/.localpkgenv-tmpinstall"
@@ -179,7 +184,7 @@ pkg_install() {
 			popd &> /dev/null
 			rm -rf "$build_dir"
 			rm -rf "$install_dir"
-			prefix_printf "ERROR: Installation of $pkg_name failed! Aborting.\n"
+			prefix_printf "ERROR: Installation of '$pkg_name' failed! Aborting.\n"
 			exit 1
 		fi
 
@@ -228,7 +233,7 @@ cmd_install() {
 
 cmd_upgrade() {
 	if [[ ! -d "$1" ]]; then
-		prefix_printf "ERROR: $1 is not a valid directory!\n"
+		prefix_printf "ERROR: '$1' is not a valid directory!\n"
 		exit 1
 	fi
 
@@ -241,14 +246,18 @@ cmd_upgrade() {
 		installed_version="$(<$installed_pkg_versionfile)"
 
 		if ! (
-			source_pkg "$pkg_name"
+			if ! source_pkg "$pkg_name"; then
+				prefix_printf "WARNING: Could not find package description file for '$pkg_name', skipping upgrade ...\n"
+				exit 0
+			fi
+
 			if [[ "$version" != "$installed_version" ]]; then
+				prefix_printf "\e[0;33mUpgrading\e[0m $pkg_name ($installed_version -> $version)\n"
 				exit 1
 			else
 				exit 0
 			fi
 		); then
-			prefix_printf "\e[0;33mUpgrading\e[0m $pkg_name\n"
 			cmd_uninstall "$localenv_root" "$pkg_name"
 			cmd_install "$localenv_root" "$pkg_name"
 		else
@@ -263,7 +272,7 @@ remove_empty_dirs() {
 
 cmd_uninstall() {
 	if [[ ! -d "$1" ]]; then
-		prefix_printf "ERROR: $1 is not a valid directory!\n"
+		prefix_printf "ERROR: '$1' is not a valid directory!\n"
 		exit 1
 	fi
 
@@ -275,7 +284,7 @@ cmd_uninstall() {
 		install_file="${localenv_root}/${INSTALLED_DIR}/${pkg_name}.files"
 
 		if [[ ! -f "$install_file" ]]; then
-			prefix_printf "WARNING: $install_file does not exist! Skipping ...\n"
+			prefix_printf "WARNING: '$install_file' does not exist! Skipping ...\n"
 			continue
 		fi
 
@@ -296,18 +305,18 @@ cmd_avail() {
 	local old_IFS=$IFS
 	IFS=$URL_SEP
 
-	for pkg_url in $PKG_URLS; do
-		echo "Available package listing for $pkg_url"
-		case "$pkg_url" in
+	for repo_url in $REPO_URLS; do
+		echo "Available package listing for $repo_url"
+		case "$repo_url" in
 			http://*|https://*)
 				prefix_printf "Listing packages for a HTTP repository is not supported!\n"
 				;;
 			*)
 				# Don't show hidden files
-				find "$pkg_url" \( -type f -o -type l \) -a ! -name ".*" -printf "%P\n" | sort |
+				find "$repo_url" \( -type f -o -type l \) -a ! -name ".*" -printf "%P\n" | sort |
 				while read pkg_name; do
 					printf '%-25s : ' "$pkg_name"
-					( . "${pkg_url}/$pkg_name"; echo "$description" )
+					( . "${repo_url}/$pkg_name"; echo "$description" )
 				done
 				;;
 		esac
@@ -358,18 +367,18 @@ cmd_chenv() {
 	fi
 }
 
-sanitize_pkg_urls() {
-	local old_pkg_urls="$PKG_URLS"
+sanitize_repo_urls() {
+	local old_repo_urls="$REPO_URLS"
 	local old_IFS=$IFS
 	IFS=$URL_SEP
 
-	PKG_URLS=""
+	REPO_URLS=""
 
-	for url in $old_pkg_urls; do
+	for url in $old_repo_urls; do
 		[[ "$url" =~ ^file:// ]] && url="${url##file://}"
 		url=${url%%/}
 
-		PKG_URLS+="${url};"
+		REPO_URLS+="${url};"
 	done
 
 	IFS=$old_IFS
@@ -378,8 +387,8 @@ sanitize_pkg_urls() {
 # Get command line options
 while true; do
 	case "$1" in
-		-p|--pkg-url)
-			PKG_URLS="$2;$PKG_URLS"
+		-r|--repo-urls)
+			REPO_URLS="$2;$REPO_URLS"
 			shift 2
 			;;
 		*)
@@ -388,7 +397,7 @@ while true; do
 	esac
 done
 
-sanitize_pkg_urls
+sanitize_repo_urls
 
 case "$1" in
 	install) shift; cmd_install "$@" ;;
@@ -432,7 +441,7 @@ Commands available:
     chenv      Switch to a local environment
 
 Options:
-   -p, --pkg-url
+   -r, --repo-urls
        Specify additional package repository URL; use "$URL_SEP" to separate multiple repositories.
        Currently supported protocols are: file://, http://, https://
 
