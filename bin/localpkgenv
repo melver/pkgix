@@ -41,7 +41,7 @@
 [[ -z "$LOCALPKGENV_SHELL" ]] && LOCALPKGENV_SHELL="$SHELL"
 
 # Not settable from user environment
-INSTALLED_DIR="var/lib/localpkgenv/installed"
+INSTALLED_DB="var/lib/localpkgenv/installed"
 URL_SEP=";"
 
 msg_printf() {
@@ -171,12 +171,16 @@ export_env() {
 	return 0
 }
 
+is_ref_file() {
+	[[ "$(wc -l < "$1")" =~ ^[^0-9]*0[^0-9]*$ ]]
+}
+
 source_pkg_file() {
 	local pkg_file="$1"
 
-	if [[ "$(wc -l < "$pkg_file")" =~ ^[^0-9]*0[^0-9]*$ ]]; then
+	if is_ref_file "$pkg_file"; then
 		local ref_pkg_name="$(<$pkg_file)"
-		msg_printf "Found reference to $ref_pkg_name, resolving ...\n"
+		msg_printf "Reference to $ref_pkg_name\n"
 		source_pkg "$ref_pkg_name"
 	else
 		. "$pkg_file"
@@ -230,7 +234,7 @@ pkg_install() {
 		exit 1
 	fi
 
-	if [[ -f "${localenv_root}/${INSTALLED_DIR}/${pkg_name}.version" ]]; then
+	if [[ -f "${localenv_root}/${INSTALLED_DB}/${pkg_name}.version" ]]; then
 		msg_printf "$pkg_name is available\n"
 		return 0
 	fi
@@ -297,11 +301,12 @@ pkg_install() {
 		(( arg_keep_build_dir == 0)) && rm -rf "$build_dir"
 
 		# As prefix is $localenv_root, the complete folder structure from / is maintained inside $install_dir
-		find_printbase "${install_dir}/${localenv_root}" \( -type f -o -type l \) > "${localenv_root}/${INSTALLED_DIR}/${pkg_name}.files"
+		mkdir -p "$(dirname "${localenv_root}/${INSTALLED_DB}/${pkg_name}")"
+		find_printbase "${install_dir}/${localenv_root}" \( -type f -o -type l \) > "${localenv_root}/${INSTALLED_DB}/${pkg_name}.files"
 		cp -rp "${install_dir}/${localenv_root}"/* "${localenv_root}"
 		rm -rf "$install_dir"
 
-		echo "$version" > "${localenv_root}/${INSTALLED_DIR}/${pkg_name}.version"
+		echo "$version" > "${localenv_root}/${INSTALLED_DB}/${pkg_name}.version"
 
 		printf "\e[0;36m============================================================\e[0m\n"
 	) || exit 1
@@ -333,8 +338,8 @@ cmd_install() {
 		exit 1
 	fi
 
-	if [[ ! -d "${localenv_root}/${INSTALLED_DIR}" ]]; then
-		if ! mkdir -p "${localenv_root}/${INSTALLED_DIR}" 2> /dev/null; then
+	if [[ ! -d "${localenv_root}/${INSTALLED_DB}" ]]; then
+		if ! mkdir -p "${localenv_root}/${INSTALLED_DB}" 2> /dev/null; then
 			error_printf "Could not create directory '$localenv_root'!\n"
 			exit 1
 		fi
@@ -358,9 +363,10 @@ cmd_upgrade() {
 		exit 1
 	fi
 
-	find "${localenv_root}/${INSTALLED_DIR}" -type f -name "*.version" |
+	find "${localenv_root}/${INSTALLED_DB}" -type f -name "*.version" |
 	while read installed_pkg_versionfile; do
-		pkg_name="$(basename "$installed_pkg_versionfile" ".version")"
+		pkg_name="${installed_pkg_versionfile##${localenv_root}/${INSTALLED_DB}/}"
+		pkg_name="${pkg_name%%.version}"
 		installed_version="$(<$installed_pkg_versionfile)"
 
 		if ! (
@@ -395,7 +401,7 @@ cmd_uninstall() {
 	
 	local install_file
 	for pkg_name in "$@"; do
-		install_file="${localenv_root}/${INSTALLED_DIR}/${pkg_name}.files"
+		install_file="${localenv_root}/${INSTALLED_DB}/${pkg_name}.files"
 
 		if [[ ! -f "$install_file" ]]; then
 			warning_printf "'$install_file' does not exist! Skipping ...\n"
@@ -409,7 +415,7 @@ cmd_uninstall() {
 		done < "$install_file"
 
 		rm -fv "$install_file"
-		rm -fv "${localenv_root}/${INSTALLED_DIR}/${pkg_name}.version"
+		rm -fv "${localenv_root}/${INSTALLED_DB}/${pkg_name}.version"
 
 		remove_empty_dirs "$localenv_root"
 	done
@@ -429,8 +435,13 @@ cmd_avail() {
 				# Don't show hidden files
 				find_printbase "$repo_url" \( -type f -o -type l \) -a ! -name ".*" 2> /dev/null | sort |
 				while read pkg_name; do
-					printf '%-25s : ' "$pkg_name"
-					( . "${repo_url}/$pkg_name"; echo "$description" )
+					if is_ref_file "${repo_url}/$pkg_name"; then
+						printf '%-24s -> ' "$pkg_name"
+						echo "$(<"${repo_url}/$pkg_name")"
+					else
+						printf '%-25s : ' "$pkg_name"
+						( . "${repo_url}/$pkg_name"; echo "$description" )
+					fi
 				done
 				;;
 		esac
@@ -445,11 +456,12 @@ cmd_list() {
 	for localenv_root in "$@"; do
 		if export_env "$localenv_root"; then
 			printf "[%-68s]\n" "${localenv_root%%/}"
-			if [[ -d "${localenv_root}/${INSTALLED_DIR}" ]]; then
-				find "${localenv_root}/${INSTALLED_DIR}" -type f -name "*.version" |
+			if [[ -d "${localenv_root}/${INSTALLED_DB}" ]]; then
+				find "${localenv_root}/${INSTALLED_DB}" -type f -name "*.version" |
 				while read installed_pkg_versionfile; do
-					installed_pkg_name="$(basename "$installed_pkg_versionfile" ".version")"
-					echo "${installed_pkg_name} ($(<$installed_pkg_versionfile))"
+					pkg_name="${installed_pkg_versionfile##${localenv_root}/${INSTALLED_DB}/}"
+					pkg_name="${pkg_name%%.version}"
+					echo "${pkg_name} ($(<$installed_pkg_versionfile))"
 				done
 			fi
 			echo "----------------------------------------------------------------------"
