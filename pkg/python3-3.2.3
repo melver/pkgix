@@ -18,7 +18,7 @@ build() {
 
 	./configure --prefix="$1" CFLAGS="-I$1/include" LDFLAGS="-L$1/usr/local/lib"
 	make
-	make install
+	make DESTDIR="$2" install
 }
 
 # vim: set ft=sh :

@@ -13,7 +13,7 @@ build() {
 	cd "numpy-${version}"
 
 	Atlas=None LDFLAGS="-shared" python3 setup.py config_fc --fcompiler=gnu95 build
-	python3 setup.py config_fc --fcompiler=gnu95 install --prefix="$1" --optimize=1
+	python3 setup.py config_fc --fcompiler=gnu95 install --prefix="$1" --root="$2" --optimize=1
 }
 
 # vim: set ft=sh :

@@ -33,7 +33,7 @@ build() {
 		--with-system-zlib
 
 	make
-	make install
+	make DESTDIR="$2" install
 }
 
 # vim: set ft=sh :

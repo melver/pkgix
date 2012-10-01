@@ -15,7 +15,7 @@
 #    documentation and/or other materials provided with the
 #    distribution.
 # 
-#  * Neither the name of localenv nor the names of its contributors
+#  * Neither the name of localpkgenv nor the names of its contributors
 #    may be used to endorse or promote products derived from this
 #    software without specific prior written permission.
 # 
@@ -31,13 +31,13 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-# localenv: Localenv environment helper script.
+# localpkgenv: Local environment and package management helper script.
 #
 # Author: Marco Elver <me AT marcoelver.com>
 # Date: Sun 30 Sep 17:27:35 BST 2012
 
 [[ -z "$PKG_URLS" ]] && PKG_URLS="$(cd `dirname $0`/.. && pwd)/pkg"
-INSTALLED_DIR="localenv-installed"
+INSTALLED_DIR="var/lib/localpkgenv/installed"
 URL_SEP=";"
 
 extract_archive() {
@@ -72,8 +72,8 @@ fetch_extract() {
 	extract_archive "$archive_name"
 }
 
-localenv_printf() {
-	printf "\e[0;35m[localenv]\e[0m ""$@"
+prefix_printf() {
+	printf "\e[0;35m[localpkgenv]\e[0m ""$@"
 }
 
 export_env() {
@@ -101,9 +101,9 @@ source_pkg_file() {
 			http://*)
 				local tmpfile="$(mktemp)"
 
-				localenv_printf "Trying $pkg_file\n"
+				prefix_printf "Trying $pkg_file\n"
 				if wget -q -O "$tmpfile" "$pkg_file"; then
-					localenv_printf "Using \e[0;32m$pkg_file\e[0m\n"
+					prefix_printf "Using \e[0;32m$pkg_file\e[0m\n"
 					. "$tmpfile"
 					rm "$tmpfile"
 					break
@@ -111,9 +111,9 @@ source_pkg_file() {
 				rm "$tmpfile"
 				;;
 			*)
-				localenv_printf "Trying $pkg_file\n"
+				prefix_printf "Trying $pkg_file\n"
 				if [[ -f "$pkg_file" ]]; then
-					localenv_printf "Using \e[0;32m$pkg_file\e[0m\n"
+					prefix_printf "Using \e[0;32m$pkg_file\e[0m\n"
 					. "$pkg_file"
 					break
 				fi
@@ -129,51 +129,62 @@ pkg_install() {
 	local pkg_name="$2"
 	local arg_force="${3:-0}"
 
+	if [[ -f "${localenv_root}/${INSTALLED_DIR}/${pkg_name}.version" ]]; then
+		prefix_printf "$pkg_name is available\n"
+		return 0
+	fi
+
 	(
 		source_pkg_file "$pkg_name"
 		
 		if (( arg_force == 0 )); then
 			if is_installed; then
-				localenv_printf "$pkg_name already available, skipping ...\n"
+				prefix_printf "$pkg_name already available outside of $localenv_root, skipping ...\n"
 				exit 0
 			fi
 		else
 			if is_installed; then
-				localenv_printf "Forcing installation of $pkg_name, despite already available ...\n"
+				prefix_printf "Forcing installation of $pkg_name, despite already available outside of $localenv_root ...\n"
 			fi
 		fi
 
-		localenv_printf "Resolving $pkg_name dependencies ...\n"
+		prefix_printf "Resolving $pkg_name dependencies ...\n"
 
 		for dep_name in ${depends[@]}; do
 			pkg_install "$localenv_root" "$dep_name" "$arg_force"
 		done
 
-		localenv_printf "Installing $pkg_name\n"
+		prefix_printf "Installing $pkg_name\n"
 
-		local build_dir="${localenv_root}/.build"
+		local build_dir="${localenv_root}/.localpkgenv-build"
+		local install_dir="${localenv_root}/.localpkgenv-tmpinstall"
 		mkdir "$build_dir"
+		mkdir "$install_dir"
 
 		pushd "$build_dir" &> /dev/null
 
-		if ! build "$localenv_root" ; then
+		if ! build "$localenv_root" "$install_dir" ; then
 			popd &> /dev/null
 			rm -rf "$build_dir"
-			localenv_printf "ERROR: Installation of $pkg_name failed! Aborting.\n"
+			rm -rf "$install_dir"
+			prefix_printf "ERROR: Installation of $pkg_name failed! Aborting.\n"
 			exit 1
 		fi
+
 		popd &> /dev/null
 		rm -rf "$build_dir"
 
-		local tmpfile="$(mktemp)"
-		find "${localenv_root}/${INSTALLED_DIR}" -type f -name "*.files" | xargs cat > "$tmpfile" 2> /dev/null
-		find "$localenv_root" -type f -printf "%P\n" | grep -v -f "$tmpfile" |
-			grep -v "^$INSTALLED_DIR" > "${localenv_root}/${INSTALLED_DIR}/${pkg_name}.files"
-		rm "$tmpfile"
+		# As prefix is $localenv_root, the complete folder structure from / is maintained inside $install_dir
+		find "${install_dir}/${localenv_root}" \( -type f -o -type l \) -printf "%P\n" > "${localenv_root}/${INSTALLED_DIR}/${pkg_name}.files"
+		cp -rp "${install_dir}/${localenv_root}"/* "${localenv_root}"
+		rm -rf "$install_dir"
+
 		echo "$version" > "${localenv_root}/${INSTALLED_DIR}/${pkg_name}.version"
 
 		printf "\e[0;36m============================================================\e[0m\n"
 	) || exit 1
+
+	return 0
 }
 
 cmd_install() {
@@ -189,7 +200,7 @@ cmd_install() {
 	shift
 
 	if [[ -z "$1" ]]; then
-		localenv_printf "You need to specify at least one package to install.\n"
+		prefix_printf "You need to specify at least one package to install.\n"
 		exit 1
 	fi
 
@@ -199,18 +210,13 @@ cmd_install() {
 	export_env "$localenv_root"
 
 	for pkg_name in "$@"; do
-		if [[ -f "${localenv_root}/${INSTALLED_DIR}/${pkg_name}.version" ]]; then
-			localenv_printf "$pkg_name already installed, skipping ...\n"
-			continue
-		fi
-
 		pkg_install "$localenv_root" "$pkg_name" "$arg_force"
 	done
 }
 
 cmd_upgrade() {
 	if [[ ! -d "$1" ]]; then
-		localenv_printf "ERROR: $1 is not a valid directory!\n"
+		prefix_printf "ERROR: $1 is not a valid directory!\n"
 		exit 1
 	fi
 
@@ -230,11 +236,11 @@ cmd_upgrade() {
 				exit 0
 			fi
 		); then
-			localenv_printf "\e[0;33mUpgrading\e[0m $pkg_name\n"
+			prefix_printf "\e[0;33mUpgrading\e[0m $pkg_name\n"
 			cmd_uninstall "$localenv_root" "$pkg_name"
 			cmd_install "$localenv_root" "$pkg_name"
 		else
-			localenv_printf "$pkg_name ($installed_version) is up to date\n"
+			prefix_printf "$pkg_name ($installed_version) is up to date\n"
 		fi
 	done
 }
@@ -245,7 +251,7 @@ remove_empty_dirs() {
 
 cmd_uninstall() {
 	if [[ ! -d "$1" ]]; then
-		localenv_printf "ERROR: $1 is not a valid directory!\n"
+		prefix_printf "ERROR: $1 is not a valid directory!\n"
 		exit 1
 	fi
 
@@ -257,11 +263,11 @@ cmd_uninstall() {
 		install_file="${localenv_root}/${INSTALLED_DIR}/${pkg_name}.files"
 
 		if [[ ! -f "$install_file" ]]; then
-			localenv_printf "WARNING: $install_file does not exist! Skipping ...\n"
+			prefix_printf "WARNING: $install_file does not exist! Skipping ...\n"
 			continue
 		fi
 
-		localenv_printf "Uninstalling $pkg_name ...\n"
+		prefix_printf "Uninstalling $pkg_name ...\n"
 
 		while read filename; do
 			rm -fv "${localenv_root}/$filename"
@@ -282,7 +288,7 @@ cmd_avail() {
 		echo "Available package listing for $pkg_url"
 		case "$pkg_url" in
 			http://*)
-				localenv_printf "Listing packages for a HTTP repository is not supported!\n"
+				prefix_printf "Listing packages for a HTTP repository is not supported!\n"
 				;;
 			*)
 				# Don't show hidden files
@@ -300,7 +306,7 @@ cmd_avail() {
 }
 
 cmd_list() {
-	localenv_printf "Installed packages:\n"
+	prefix_printf "Installed packages:\n"
 	for localenv_root in "$@"; do
 		if export_env "$localenv_root"; then
 			printf "[%-68s]\n" "${localenv_root%%/}"
@@ -332,7 +338,7 @@ cmd_chenv() {
 	local script_stat=($(</proc/$$/stat))    # create an array
 	local parent_pid=${script_stat[3]}
 
-	localenv_printf "Spawning shell\n"
+	prefix_printf "Spawning shell\n"
 	if [[ -x "/proc/${parent_pid}/exe" ]]; then
 		exec "/proc/${parent_pid}/exe"
 	else
@@ -340,20 +346,7 @@ cmd_chenv() {
 	fi
 }
 
-# Get command line options
-while true; do
-	case "$1" in
-		-p|--pkg-url)
-			PKG_URLS="$2;$PKG_URLS"
-			shift 2
-			;;
-		*)
-			break
-			;;
-	esac
-done
-
-sanitize_pkg_url() {
+sanitize_pkg_urls() {
 	local old_pkg_urls="$PKG_URLS"
 	local old_IFS=$IFS
 	IFS=$URL_SEP
@@ -370,7 +363,20 @@ sanitize_pkg_url() {
 	IFS=$old_IFS
 }
 
-sanitize_pkg_url
+# Get command line options
+while true; do
+	case "$1" in
+		-p|--pkg-url)
+			PKG_URLS="$2;$PKG_URLS"
+			shift 2
+			;;
+		*)
+			break
+			;;
+	esac
+done
+
+sanitize_pkg_urls
 
 case "$1" in
 	install) shift; cmd_install "$@" ;;
@@ -388,7 +394,8 @@ Usage: $0 install [-f|--force] <localenv-dir> <pkgs>...
 
 Options:
     -f, --force
-        Force reinstallation of already installed programs.
+        Force installation of programs that are already available outside of
+        <localenv-dir>.
 EOF
 				;;
 			upgrade|uninstall|avail|list|showenv|chenv|help)

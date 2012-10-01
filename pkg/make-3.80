@@ -15,7 +15,7 @@ build() {
 	./configure --prefix="$1"
 	
 	make
-	make install
+	make DESTDIR="$2" install
 }
 
 # vim: set ft=sh :
