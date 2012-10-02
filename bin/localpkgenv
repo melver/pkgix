@@ -264,12 +264,49 @@ pkg_install() {
 		return 0
 	fi
 
+	# Nested, otherwise variables will get overwritten on recursive calls.
 	(
+		# Need to unset previous variables, otherwise we might end in an
+		# endless loop when resolving dependencies
+
+		unset metapkg
+		unset satisfied
+		unset version
+		unset description
+		unset depends
+		unset iscompat
+		unset isinstalled
+		unset build
+		unset installenv
+
 		if ! source_pkg "$pkg_name"; then
 			error_printf "Could not find package description file for '$pkg_name'!\n"
 			exit 1
 		fi
 		
+		# Traverse meta packages
+		local prev_metapkg="$pkg_name"
+		while [[ -n "$metapkg" ]]; do
+			if satisfied; then
+				msg_printf "Metapackage '$prev_metapkg' satisfied.\n"
+				exit 0
+			fi
+
+			msg_printf "Metapackage: $prev_metapkg -> $metapkg\n"
+			prev_metapkg="$metapkg"
+
+			# Unset meta package fields
+			unset metapkg
+			unset version
+			unset satisfied
+			unset description
+
+			if ! source_pkg "$prev_metapkg"; then
+				error_printf "Could not find package description file for '$prev_metapkg'!\n"
+				exit 1
+			fi
+		done
+
 		if isinstalled; then
 			if (( arg_force == 0 )); then
 				msg_printf "'$pkg_name' already available outside of '$localenv_root', skipping...\n"
@@ -335,6 +372,18 @@ pkg_install() {
 
 		echo "$version" > "${localenv_root}/${INSTALLED_DB}/${pkg_name}.version"
 
+		# The db file is important for upgrading packages in the order they were installed!
+		# As the entries are not deleted upon uninstallation, over time, a dependence ordering
+		# is being built, so that if uninstalled packages are reinstalled, upgrading still
+		# works as before.
+		local db_file="${localenv_root}/${INSTALLED_DB}.db"
+
+		if [[ -f "$db_file" ]] && grep -q "^.|${pkg_name}$" "$db_file"; then
+			sed -i "s:^.|${pkg_name}$:i|${pkg_name}:" "$db_file"
+		else
+			echo "i|$pkg_name" >> "$db_file"
+		fi
+
 		msg_printf "Done installing $pkg_name ($version)\n"
 	) || exit 1
 
@@ -366,6 +415,9 @@ pkg_uninstall() {
 
 	# Then clean up db separately
 	remove_empty_dirs "${localenv_root}/${INSTALLED_DB}"
+
+	# Set package as uninstalled
+	sed -i "s:^.|${pkg_name}$:u|${pkg_name}:" "${localenv_root}/${INSTALLED_DB}.db"
 
 	msg_printf "Done uninstalling $pkg_name\n"
 }
@@ -401,7 +453,7 @@ cmd_install() {
 cmd_upgrade() {
 	local localenv_root="$1"
 
-	if [[ ! -d "${localenv_root}/${INSTALLED_DB}" ]]; then
+	if [[ ! -f "${localenv_root}/${INSTALLED_DB}.db" ]]; then
 		error_printf "'$localenv_root' is not a valid localpkgenv root!\n"
 		exit 1
 	fi
@@ -409,11 +461,19 @@ cmd_upgrade() {
 	localenv_root="$(cd "$localenv_root" && pwd)"
 	export_env "$localenv_root"
 
-	find "${localenv_root}/${INSTALLED_DB}" -type f -name "*.version" |
-	while read installed_pkg_versionfile; do
-		pkg_name="${installed_pkg_versionfile##${localenv_root}/${INSTALLED_DB}/}"
-		pkg_name="${pkg_name%%.version}"
-		installed_version="$(<$installed_pkg_versionfile)"
+	msg_printf "Upgrading $localenv_root ...\n"
+
+	grep "^i|" "${localenv_root}/${INSTALLED_DB}.db" |
+	while read pkg_name; do
+		pkg_name="${pkg_name##i|}"
+		version_file="${localenv_root}/${INSTALLED_DB}/${pkg_name}.version"
+
+		if [[ ! -f "$version_file" ]]; then
+			warning_printf "Inconsistent database: no metadata for '$pkg_name'\n"
+			continue
+		fi
+
+		installed_version="$(<$version_file)"
 
 		if ! (
 			if ! source_pkg "$pkg_name"; then
@@ -493,12 +553,15 @@ cmd_list() {
 		[[ -d "${localenv_root}/${INSTALLED_DB}" ]] && localenv_root="$(cd "$localenv_root" && pwd)" || continue
 		if export_env "$localenv_root"; then
 			printf "\e[1;34m%-68s\e[0m\n" "$localenv_root"
+
 			find "${localenv_root}/${INSTALLED_DB}" -type f -name "*.version" | sort |
-			while read installed_pkg_versionfile; do
-				pkg_name="${installed_pkg_versionfile##${localenv_root}/${INSTALLED_DB}/}"
+			while read version_file; do
+				pkg_name="${version_file##${localenv_root}/${INSTALLED_DB}/}"
 				pkg_name="${pkg_name%%.version}"
-				printf "\e[1;34m|\e[0m ${pkg_name} ($(<$installed_pkg_versionfile))\n"
+
+				printf "\e[1;34m|\e[0m ${pkg_name} ($(<$version_file))\n"
 			done
+
 			printf "\e[1;34m----------------------------------------------------------------------\e[0m\n"
 		fi
 	done
