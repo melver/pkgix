@@ -47,6 +47,7 @@
 # Not settable from user environment
 INSTALLED_DB="var/lib/localpkgenv/installed"
 URL_SEP=";"
+METAPKG_DUMMY="_dummy"
 
 msg_printf() {
 	printf "\e[0;35m[localpkgenv]\e[0m ""$@" 1>&2
@@ -101,30 +102,30 @@ case "$OSTYPE" in
 esac
 
 extract_archive() {
-  if [[ -f $1 ]] ; then
-	verbose_printf "Extracting '$1'...\n"
+	if [[ -f $1 ]] ; then
+		msg_printf "Extracting '$1'...\n"
 
-    case $1 in
-      *.tar.bz2)   tar xjf $1   ;;
-      *.tar.gz)    tar xzf $1   ;;
-      *.tar.lzma)  tar --lzma -xf $1 ;;
-      *.tar.xz)    tar xJf $1   ;;
-      *.tar)       tar xf $1    ;;
-      *.tbz2)      tar xjf $1   ;;
-      *.tgz)       tar xzf $1   ;;
-      *.txz)       tar xJf $1   ;;
-      *.bz2)       bunzip2 $1    ;;
-      *.rar)       unrar x $1    ;;
-      *.gz)        gunzip $1     ;;
-      *.zip)       unzip $1      ;;
-      *.Z)         uncompress $1 ;;
-      *.7z)        7z x $1       ;;
-      *)           error_printf "'$1' cannot be extracted (format unknown) !\n" ; exit 1 ;;
-    esac
-  else
-    error_printf "'$1' is not a valid file !\n"
-	exit 1
-  fi
+		case $1 in
+			*.tar.bz2)  tar xjf $1   ;;
+			*.tar.gz)   tar xzf $1   ;;
+			*.tar.lzma) tar --lzma -xf $1 ;;
+			*.tar.xz)   tar xJf $1   ;;
+			*.tar)      tar xf $1    ;;
+			*.tbz2)     tar xjf $1   ;;
+			*.tgz)      tar xzf $1   ;;
+			*.txz)      tar xJf $1   ;;
+			*.bz2)      bunzip2 $1    ;;
+			*.rar)      unrar x $1    ;;
+			*.gz)       gunzip $1     ;;
+			*.zip)      unzip $1      ;;
+			*.Z)        uncompress $1 ;;
+			*.7z)       7z x $1       ;;
+			*)          error_printf "'$1' cannot be extracted (format unknown) !\n" ; exit 1 ;;
+		esac
+	else
+		error_printf "'$1' is not a valid file !\n"
+		exit 1
+	fi
 }
 
 fetch() {
@@ -133,6 +134,7 @@ fetch() {
 	local file_name="$(basename "$url")"
 
 	if [[ ! -f "$file_name" ]]; then
+		msg_printf "Fetching '$url'...\n"
 		$LOCALPKGENV_FETCH "$url" || exit 1
 	fi
 
@@ -250,7 +252,7 @@ source_pkg() {
 
 	IFS=$old_IFS
 
-	[[ -n "$version" ]]
+	[[ -n "$version" || "$metapkg" == "$METAPKG_DUMMY" ]]
 }
 
 pkg_install() {
@@ -282,32 +284,41 @@ pkg_install() {
 		unset build
 		unset installenv
 
-		if ! source_pkg "$pkg_name"; then
-			error_printf "Could not find package description file for '$pkg_name'!\n"
-			exit 1
-		fi
-		
-		# Traverse meta packages
-		local prev_metapkg="$pkg_name"
-		while [[ -n "$metapkg" ]]; do
+		# Source package description file and try to traverse until a non-meta
+		# package description is found.
+		local next_pkg_name="$pkg_name" # preserve requested package name
+		while true; do
+			if ! source_pkg "$next_pkg_name"; then
+				error_printf "Could not find valid package description file for '$next_pkg_name'!\n"
+				exit 1
+			fi
+
+			# Not a meta-package, continue normally
+			[[ -z "$metapkg" ]] && break
+
+			# Is metapackage, check if satisfied
 			if satisfied; then
-				msg_printf "Metapackage '$prev_metapkg' satisfied.\n"
+				msg_printf "Metapackage '$next_pkg_name' satisfied.\n"
 				exit 0
 			fi
 
-			msg_printf "Metapackage: $prev_metapkg -> $metapkg\n"
-			prev_metapkg="$metapkg"
+			# If this metapackage is only a dummy to check if a dependence is satisfied,
+			# and the above 'satisfied' function failed, this is a dead end.
+			if [[ "$metapkg" == "$METAPKG_DUMMY" ]]; then
+				error_printf "Metapackage '$next_pkg_name' could not be satisfied!\n"
+				exit 1
+			fi
 
-			# Unset meta package fields
+			# Not satisfied and not a dummy, resolve this by trying to install
+			# the suggested package.
+			msg_printf "Metapackage: $next_pkg_name -> $metapkg\n"
+			next_pkg_name="$metapkg"
+
+			# Unset meta package fields, before next iteration of source_pkg
 			unset metapkg
 			unset version
 			unset satisfied
 			unset description
-
-			if ! source_pkg "$prev_metapkg"; then
-				error_printf "Could not find package description file for '$prev_metapkg'!\n"
-				exit 1
-			fi
 		done
 
 		if isinstalled; then
