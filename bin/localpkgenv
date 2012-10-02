@@ -41,6 +41,9 @@
 [[ -z "$LOCALPKGENV_SHELL" ]] && LOCALPKGENV_SHELL="$SHELL"
 [[ -z "$LOCALPKGENV_FETCH" ]] && LOCALPKGENV_FETCH="wget"
 
+# LOCALPKGENV_HOME: If set, LOCALPKGENV_HOME is being used as the default
+# root (no need to specify for each command).
+
 # Not settable from user environment
 INSTALLED_DB="var/lib/localpkgenv/installed"
 URL_SEP=";"
@@ -641,13 +644,23 @@ case "$1" in
 			esac
 		done
 
-		$cmd "$@"
+		if [[ -z "$LOCALPKGENV_HOME" ]]; then
+			$cmd "$@"
+		else
+			$cmd "$LOCALPKGENV_HOME" "$@"
+		fi
 		;;
-	uninstall) shift; cmd_uninstall "$@" ;;
-	avail)     shift; cmd_avail "$@" ;;
-	list)      shift; cmd_list "$@" ;;
-	showenv)   shift; cmd_showenv "$@" ;;
-	chenv)     shift; cmd_chenv "$@" ;;
+	uninstall|list|showenv|chenv)
+		cmd=cmd_$1
+		shift
+
+		if [[ -z "$LOCALPKGENV_HOME" ]]; then
+			$cmd "$@"
+		else
+			$cmd "$LOCALPKGENV_HOME" "$@"
+		fi
+		;;
+	avail) shift; cmd_avail "$@" ;;
 	help)
 		case "$2" in
 			install|upgrade)
@@ -678,7 +691,8 @@ EOF
 		;;
 	*)
 		cat <<EOF
-Usage: localpkgenv [-p|--pkgpath] <command> [<args>]
+Usage: localpkgenv [-r|--repo-urls] [-n|--noconfirm] [-v|--verbose]
+                   <command> [<args>]
 
 Commands available:
     install    Install a package in a local environment
