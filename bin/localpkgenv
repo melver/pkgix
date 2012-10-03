@@ -378,7 +378,10 @@ pkg_install() {
 			unset description
 		done
 
-		if isinstalled; then
+		# Run all commands from package description file in subshells
+		# so they can't clutter the namespace.
+
+		if ( isinstalled ); then
 			if (( arg_force == 0 )); then
 				msg_printf "'$pkg_name' already available outside of '$localenv_root', skipping...\n"
 				exit 0
@@ -387,7 +390,7 @@ pkg_install() {
 			fi
 		fi
 
-		if ! iscompat; then
+		if ! ( iscompat ); then
 			if (( arg_force == 0 )); then
 				error_printf "'$pkg_name' is not compatible with your system!\n"
 				exit 1
@@ -415,7 +418,9 @@ pkg_install() {
 
 		pushd "$build_dir" &> /dev/null
 
-		if ! build "$localenv_root" "$install_dir" ; then
+		# Run build and installenv in subshells
+
+		if ! ( build "$localenv_root" "$install_dir" ); then
 			popd &> /dev/null
 			(( arg_keep_build_dir == 0)) && rm -rf "$build_dir"
 			rm -rf "$install_dir"
@@ -423,7 +428,7 @@ pkg_install() {
 			exit 1
 		fi
 
-		if ! installenv "$localenv_root" "$install_dir" ; then
+		if ! ( installenv "$localenv_root" "$install_dir" ); then
 			popd &> /dev/null
 			(( arg_keep_build_dir == 0)) && rm -rf "$build_dir"
 			rm -rf "$install_dir"
