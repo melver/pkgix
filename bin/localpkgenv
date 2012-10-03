@@ -136,12 +136,18 @@ fetch() {
 		if [[ "$url" =~ ^/ ]]; then
 			# Is a local path, just copy
 			msg_printf "Copying '$url'...\n"
-			cp "$url" "$file_name" &> /dev/null || exit 1
+			if ! cp "$url" "$file_name" &> /dev/null; then
+				error_printf "Copying '$url' failed!\n"
+				exit 1
+			fi
 		else
 			local fetch_cmd
 			printf -v fetch_cmd "$LOCALPKGENV_FETCH" "$file_name"
 			msg_printf "Fetching '$url'...\n"
-			$fetch_cmd "$url" || exit 1
+			if ! $fetch_cmd "$url"; then
+				error_printf "Fetching '$url' failed!\n"
+				exit 1
+			fi
 		fi
 	fi
 
