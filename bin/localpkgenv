@@ -133,10 +133,16 @@ fetch() {
 	local file_name="${3:-${url##*/}}"
 
 	if [[ ! -f "$file_name" ]]; then
-		local fetch_cmd
-		printf -v fetch_cmd "$LOCALPKGENV_FETCH" "$file_name"
-		msg_printf "Fetching '$url'...\n"
-		$fetch_cmd "$url" || exit 1
+		if [[ "$url" =~ ^/ ]]; then
+			# Is a local path, just copy
+			msg_printf "Copying '$url'...\n"
+			cp "$url" "$file_name" &> /dev/null || exit 1
+		else
+			local fetch_cmd
+			printf -v fetch_cmd "$LOCALPKGENV_FETCH" "$file_name"
+			msg_printf "Fetching '$url'...\n"
+			$fetch_cmd "$url" || exit 1
+		fi
 	fi
 
 	local file_checksum_sha256=($(sha256checksum "$file_name"))
@@ -231,6 +237,7 @@ export_env() {
 }
 
 cmd_showenv() {
+	local localenv_root
 	for localenv_root in "$@"; do
 		export_env "$localenv_root"
 	done
@@ -268,6 +275,9 @@ source_pkg() {
 	local old_IFS="$IFS"
 	IFS="$URL_SEP"
 
+	# Don't set repo_url as local here, as it can then be used in the package
+	# description files to get information about its source repository, and 
+	# e.g., download extra files such as patches from the repo.
 	for repo_url in $LOCALPKGENV_REPO_URLS; do
 		pkg_file="${repo_url}/$pkg_name"
 
@@ -388,6 +398,7 @@ pkg_install() {
 
 		if (( arg_nodeps == 0 )); then
 			msg_printf "Resolving $pkg_name dependencies...\n"
+			local dep_name
 			for dep_name in ${depends[@]}; do
 				pkg_install "$localenv_root" "$dep_name"
 			done
@@ -530,6 +541,7 @@ cmd_install() {
 
 	prompt_continue || exit 1
 
+	local pkg_name
 	for pkg_name in "$@"; do
 		pkg_install "$localenv_root" "$pkg_name"
 	done
@@ -591,6 +603,7 @@ cmd_upgrade() {
 		exit 1
 	fi
 
+	local localenv_root
 	for localenv_root in "$@"; do
 		# Run nested, not to pollute subsequent upgrades with export_env
 		# The environment should be set accordingly prior to upgrading!
@@ -612,6 +625,7 @@ cmd_uninstall() {
 	msg_printf "Uninstalling from $localenv_root: $*\n"
 	prompt_continue || exit 1
 	
+	local pkg_name
 	for pkg_name in "$@"; do
 		pkg_uninstall "$localenv_root" "$pkg_name"
 	done
@@ -621,6 +635,7 @@ cmd_avail() {
 	local old_IFS="$IFS"
 	IFS="$URL_SEP"
 
+	local repo_url
 	for repo_url in $LOCALPKGENV_REPO_URLS; do
 		echo "Available packages: $repo_url"
 		case "$repo_url" in
@@ -649,6 +664,7 @@ cmd_avail() {
 
 cmd_list() {
 	msg_printf "Listing installed packages...\n"
+	local localenv_root
 	for localenv_root in "$@"; do
 		# Export environment regardless of whether or not it has our db
 		if export_env "$localenv_root"; then
@@ -684,6 +700,7 @@ sanitize_repo_urls() {
 
 	LOCALPKGENV_REPO_URLS=""
 
+	local url
 	for url in $old_repo_urls; do
 		[[ "$url" =~ ^file:// ]] && url="${url##file://}"
 		url=${url%%/}
