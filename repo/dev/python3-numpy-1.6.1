@@ -21,6 +21,7 @@ build() {
 }
 
 installenv() {
+	cd "numpy-${version}"
 	python3 setup.py config_fc --fcompiler=gnu95 install --prefix="$1" --root="$2" --optimize=1
 }
 

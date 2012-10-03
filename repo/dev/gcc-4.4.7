@@ -41,6 +41,7 @@ build() {
 }
 
 installenv() {
+	cd "gcc-${version}"
 	make DESTDIR="$2" install
 }
 

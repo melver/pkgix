@@ -1,0 +1,23 @@
+
+metapkg=dev/gdbm-1.10
+version=1.10
+description="Metapackage for GDBM [$metapkg]"
+
+satisfied() {
+	local gdbmpath
+	local old_IFS="$IFS"
+	IFS=":"
+
+	# Check all the common paths
+	for path in ${CPATH[@]} /include /usr/include; do
+		if [[ -f "$path/gdbm.h" ]]; then
+			gdbmpath="$path/gdbm.h"
+			break
+		fi
+	done
+	IFS="$old_IFS"
+
+	[[ -n "$gdbmpath" ]]
+}
+
+# vim: set ft=sh :

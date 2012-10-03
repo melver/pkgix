@@ -1,10 +1,10 @@
 
 version=3.2.3
 description="Python version $version"
-depends=("dev/gdbm-1.10")
+depends=("dev/gdbm")
 
 isinstalled() {
-	return 1
+	python3 --version 2>&1 | grep -q "$version" &> /dev/null
 }
 
 iscompat() {
@@ -12,13 +12,17 @@ iscompat() {
 }
 
 build() {
-	fetch_extract "http://www.python.org/ftp/python/${version}/Python-${version}.tar.bz2" \
+	fetch_extract \
+		"http://www.python.org/ftp/python/${version}/Python-${version}.tar.bz2" \
 		"5648ec81f93870fde2f0aa4ed45c8718692b15ce6fd9ed309bfb827ae12010aa"
 
 	cd "Python-${version}"
 
 	# Version 3.2.3 required this last
-	fetch "http://bugs.python.org/file24922/_posixmodule.patch" "493a1d8257b1aa4eb54266b95e3e272aa3be2cc9db1bcfc00e61cb6385146af5"
+	fetch \
+		"http://bugs.python.org/file24922/_posixmodule.patch" \
+		"493a1d8257b1aa4eb54266b95e3e272aa3be2cc9db1bcfc00e61cb6385146af5"
+
 	patch -Np1 < _posixmodule.patch
 
 	./configure --prefix="$1"
@@ -27,10 +31,11 @@ build() {
 	# LIBRARY_PATH and CPATH environment variables.
 	#CFLAGS="-I$1/include" LDFLAGS="-L$1/lib"
 
-	make
+	make LDFLAGS="-Wl,-rpath=$LD_RUN_PATH"
 }
 
 installenv() {
+	cd "Python-${version}"
 	make DESTDIR="$2" install
 }
 

@@ -23,6 +23,7 @@ build() {
 }
 
 installenv() {
+	cd "make-${version}"
 	make DESTDIR="$2" install
 }
 
