@@ -39,7 +39,7 @@
 # Configurable variables, settable from user environment
 [[ -z "$LOCALPKGENV_REPO_URLS" ]] && LOCALPKGENV_REPO_URLS="$(cd "${0%/*}"/.. && pwd)/repo"
 [[ -z "$LOCALPKGENV_SHELL" ]] && LOCALPKGENV_SHELL="$SHELL"
-[[ -z "$LOCALPKGENV_FETCH" ]] && LOCALPKGENV_FETCH="wget"
+[[ -z "$LOCALPKGENV_FETCH" ]] && LOCALPKGENV_FETCH="wget -O %s"
 
 # LOCALPKGENV_ROOT: If set, LOCALPKGENV_ROOT is being used as the default
 # root (no need to specify for each command).
@@ -130,11 +130,13 @@ extract_archive() {
 fetch() {
 	local url="$1"
 	local checksum_sha256="$2"
-	local file_name="${url##*/}"
+	local file_name="${3:-${url##*/}}"
 
 	if [[ ! -f "$file_name" ]]; then
+		local fetch_cmd
+		printf -v fetch_cmd "$LOCALPKGENV_FETCH" "$file_name"
 		msg_printf "Fetching '$url'...\n"
-		$LOCALPKGENV_FETCH "$url" || exit 1
+		$fetch_cmd "$url" || exit 1
 	fi
 
 	local file_checksum_sha256=($(sha256checksum "$file_name"))
@@ -164,9 +166,9 @@ fetch() {
 fetch_extract() {
 	local url="$1"
 	local checksum_sha256="$2"
-	local archive_name="${url##*/}"
+	local archive_name="${3:-${url##*/}}"
 
-	fetch "$url" "$checksum_sha256"
+	fetch "$url" "$checksum_sha256" "$archive_name"
 	extract_archive "$archive_name"
 }
 
