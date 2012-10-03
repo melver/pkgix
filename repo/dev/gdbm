@@ -1,7 +1,7 @@
 
 metapkg=dev/gdbm-1.10
 version=1.10
-description="Metapackage for GDBM [$metapkg]"
+description="Metapackage for GDBM"
 
 satisfied() {
 	local gdbmpath

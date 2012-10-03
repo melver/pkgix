@@ -648,7 +648,7 @@ cmd_avail() {
 
 	local repo_url
 	for repo_url in $LOCALPKGENV_REPO_URLS; do
-		echo "Available packages: $repo_url"
+		printf "\e[1;34m-> \e[1;32m${repo_url}\e[0m\n"
 		case "$repo_url" in
 			http://*|https://*)
 				msg_printf "Listing packages for a HTTP repository is not supported!\n"
@@ -658,29 +658,27 @@ cmd_avail() {
 				find_printbase "$repo_url" \( -type f -o -type l \) -a ! -name ".*" 2> /dev/null | sort |
 				while read pkg_name; do
 					if is_pkg_pointer "${repo_url}/$pkg_name"; then
-						printf '%-34s -> ' "$pkg_name"
-						echo "$(<"${repo_url}/$pkg_name")"
+						printf "%-42s %-18s %s\n" "$pkg_name" "->" "$(<"${repo_url}/$pkg_name")"
 					else
-						printf '%-35s : ' "$pkg_name"
-						( . "${repo_url}/$pkg_name"; echo "$description" )
+						(
+							. "${repo_url}/$pkg_name"
+							printf "%-42s %-18s %s\n" "$pkg_name" "$version" "$description"
+						)
 					fi
 				done
 				;;
 		esac
-		echo "-------------------------------------------------------------------------------"
 	done
 
 	IFS="$old_IFS"
 }
 
 cmd_list() {
-	msg_printf "Listing installed packages...\n"
 	local localenv_root
 	for localenv_root in "$@"; do
-		# Export environment regardless of whether or not it has our db
-		if export_env "$localenv_root"; then
+		if [[ -d "$localenv_root" ]]; then
 			localenv_root="$(cd "$localenv_root" && pwd)"
-			printf "\e[1;34m%-68s\e[0m\n" "$localenv_root"
+			printf "\e[1;32m${localenv_root}\e[0m\n"
 
 			if [[ -d "${localenv_root}/${INSTALLED_DB}" ]]; then
 				find "${localenv_root}/${INSTALLED_DB}" -type f -name "*.version" | sort |
@@ -688,17 +686,18 @@ cmd_list() {
 					pkg_name="${version_file##${localenv_root}/${INSTALLED_DB}/}"
 					pkg_name="${pkg_name%%.version}"
 
-					printf "\e[1;34m|\e[0m ${pkg_name} ($(<$version_file))\n"
+					printf "${pkg_name} $(<$version_file)\n"
 				done
 			fi
-
-			printf "\e[1;34m----------------------------------------------------------------------\e[0m\n"
 		fi
 	done
 }
 
 cmd_chenv() {
-	cmd_list "$@"
+	local localenv_root
+	for localenv_root in "$@"; do
+		export_env "$localenv_root"
+	done
 
 	msg_printf "Spawning shell\n"
 	exec "$LOCALPKGENV_SHELL"

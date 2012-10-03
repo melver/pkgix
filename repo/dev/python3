@@ -1,7 +1,7 @@
 
 metapkg=dev/python3-3.2.3
 version=3.2.3
-description="Metapackage for Python 3 [$metapkg]"
+description="Metapackage for Python 3"
 
 satisfied() {
 	which python3 &> /dev/null

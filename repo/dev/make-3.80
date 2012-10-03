@@ -1,6 +1,6 @@
 
 version=3.80
-description="Make version $version"
+description="GNU Make"
 depends=()
 
 isinstalled() {
