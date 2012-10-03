@@ -41,7 +41,7 @@
 [[ -z "$LOCALPKGENV_SHELL" ]] && LOCALPKGENV_SHELL="$SHELL"
 [[ -z "$LOCALPKGENV_FETCH" ]] && LOCALPKGENV_FETCH="wget"
 
-# LOCALPKGENV_HOME: If set, LOCALPKGENV_HOME is being used as the default
+# LOCALPKGENV_ROOT: If set, LOCALPKGENV_ROOT is being used as the default
 # root (no need to specify for each command).
 
 # Not settable from user environment
@@ -193,8 +193,15 @@ export_env() {
 
 	verbose_printf "Using environment: $localenv_root\n"
 
-	export LOCALENV_ROOT="${localenv_root}:$LOCALENV_ROOT"
+	# Export so calls to localpkgenv don't need the root; appending, so that 
+	# installing takes the first root.
+	if [[ -z "$LOCALPKGENV_ROOT" ]]; then
+		export LOCALPKGENV_ROOT="$localenv_root"
+	else
+		export LOCALPKGENV_ROOT="$LOCALPKGENV_ROOT:${localenv_root}"
+	fi
 
+	# Prepending to PATH
 	[[ -d "${localenv_root}/bin" ]] && export PATH="${localenv_root}/bin:$PATH"
 	[[ -d "${localenv_root}/sbin" ]] && export PATH="${localenv_root}/sbin:$PATH"
 
@@ -228,7 +235,7 @@ cmd_showenv() {
 
 	# See export_env for why we are not exporting LD_LIBRARY_PATH
 
-	echo "export LOCALENV_ROOT=\"$LOCALENV_ROOT\""
+	echo "export LOCALPKGENV_ROOT=\"$LOCALPKGENV_ROOT\""
 	[[ -n "$PATH" ]] && echo "export PATH=\"$PATH\""
 	#[[ -n "$LD_LIBRARY_PATH" ]] && echo "export LD_LIBRARY_PATH=\"$LD_LIBRARY_PATH\""
 	[[ -n "$LD_RUN_PATH" ]] && echo "export LD_RUN_PATH=\"$LD_RUN_PATH\""
@@ -494,6 +501,11 @@ pkg_uninstall() {
 }
 
 cmd_install() {
+	if [[ -z "$1" ]]; then
+		error_printf "You need to specify a locakpkgenv root!\n"
+		exit 1
+	fi
+
 	local localenv_root="$1"
 	shift
 
@@ -521,7 +533,7 @@ cmd_install() {
 	done
 }
 
-cmd_upgrade() {
+root_upgrade() {
 	local localenv_root="$1"
 
 	if [[ ! -f "${localenv_root}/${INSTALLED_DB}.db" ]]; then
@@ -533,6 +545,8 @@ cmd_upgrade() {
 	export_env "$localenv_root"
 
 	msg_printf "Upgrading $localenv_root ...\n"
+
+	prompt_continue || exit 1
 
 	grep "^i|" "${localenv_root}/${INSTALLED_DB}.db" |
 	while read pkg_name; do
@@ -567,6 +581,19 @@ cmd_upgrade() {
 	done
 
 	msg_printf "Done upgrading.\n"
+}
+
+cmd_upgrade() {
+	if [[ -z "$1" ]]; then
+		error_printf "You need to specify at least one locakpkgenv root!\n"
+		exit 1
+	fi
+
+	for localenv_root in "$@"; do
+		# Run nested, not to pollute subsequent upgrades with export_env
+		# The environment should be set accordingly prior to upgrading!
+		( root_upgrade "$localenv_root" )
+	done
 }
 
 cmd_uninstall() {
@@ -685,11 +712,10 @@ done
 
 sanitize_repo_urls
 
-case "$1" in
+cmd=$1
+shift
+case "$cmd" in
 	install|upgrade)
-		cmd=cmd_$1
-		shift
-
 		arg_force=0
 		arg_nodeps=0
 		arg_keep_build_dir=0
@@ -705,28 +731,37 @@ case "$1" in
 			esac
 		done
 
-		if [[ -z "$LOCALPKGENV_HOME" ]]; then
-			$cmd "$@"
+		;;& # Evaluate next statements!
+	install|uninstall)
+		if [[ -z "$LOCALPKGENV_ROOT" ]]; then
+			cmd_$cmd "$@"
 		else
-			$cmd "$LOCALPKGENV_HOME" "$@"
+			# Commands which can only accept one root, pass first one only
+			# Remove leading ':'
+			args_root="${LOCALPKGENV_ROOT##:}"
+			cmd_$cmd "${args_root%%:*}" "$@"
 		fi
 		;;
-	uninstall|list|showenv|chenv)
-		cmd=cmd_$1
-		shift
-
-		if [[ -z "$LOCALPKGENV_HOME" ]]; then
-			$cmd "$@"
+	upgrade|list|showenv|chenv)
+		if [[ -z "$LOCALPKGENV_ROOT" ]]; then
+			cmd_$cmd "$@"
 		else
-			$cmd "$LOCALPKGENV_HOME" "$@"
+			old_IFS="$IFS"
+			IFS=":"
+			args_root=(${LOCALPKGENV_ROOT[@]})
+			IFS="$old_IFS"
+			unset old_IFS
+			cmd_$cmd "${args_root[@]}" "$@"
 		fi
 		;;
-	avail) shift; cmd_avail "$@" ;;
+	avail)
+		cmd_$cmd "$@"
+		;;
 	help)
-		case "$2" in
+		case "$1" in
 			install|upgrade)
 				cat <<EOF
-Usage: localpkgenv $2 [-f|--force] [-d|--nodeps] [--keep-build-dir]
+Usage: localpkgenv $1 [-f|--force] [-d|--nodeps] [--keep-build-dir]
                    [--ignore-checksums]
                    <localenv-dir> <pkgs>...
 
