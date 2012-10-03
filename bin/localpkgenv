@@ -37,7 +37,7 @@
 # Date: Sun 30 Sep 17:27:35 BST 2012
 
 # Configurable variables, settable from user environment
-[[ -z "$LOCALPKGENV_REPO_URLS" ]] && LOCALPKGENV_REPO_URLS="$(cd `dirname $0`/.. && pwd)/repo"
+[[ -z "$LOCALPKGENV_REPO_URLS" ]] && LOCALPKGENV_REPO_URLS="$(cd "${0%/*}"/.. && pwd)/repo"
 [[ -z "$LOCALPKGENV_SHELL" ]] && LOCALPKGENV_SHELL="$SHELL"
 [[ -z "$LOCALPKGENV_FETCH" ]] && LOCALPKGENV_FETCH="wget"
 
@@ -74,10 +74,6 @@ case "$OSTYPE" in
 			sha256 "$@"
 		}
 
-		remove_empty_dirs() {
-			warning_printf "remove_empty_dirs not yet implemented for FreeBSD\n"
-		}
-
 		find_printbase() {
 			find "$@" | sed "s:^$1::" 
 		}
@@ -89,17 +85,20 @@ case "$OSTYPE" in
 			sha256sum "$@"
 		}
 
-		remove_empty_dirs() {
-			local find_extra_args
-			(( arg_verbose == 0 )) && find_extra_args=("-printf" "") || find_extra_args=("-printf" "removed '%p'\n")
-			find "$1" -type d -empty -delete "${find_extra_args[@]}"
-		}
-
 		find_printbase() {
 			find "$@" -printf "%P\n"
 		}
 		;;
 esac
+
+remove_empty_dirs() {
+	local path="$1"
+	local depth="$2"
+	local find_args
+	[[ -z "$depth" ]] && find_args=() || find_args=("-maxdepth" "$depth")
+
+	find "$path" "${find_args[@]}" -type d -empty -delete
+}
 
 extract_archive() {
 	if [[ -f $1 ]] ; then
@@ -131,7 +130,7 @@ extract_archive() {
 fetch() {
 	local url="$1"
 	local checksum_sha256="$2"
-	local file_name="$(basename "$url")"
+	local file_name="${url##*/}"
 
 	if [[ ! -f "$file_name" ]]; then
 		msg_printf "Fetching '$url'...\n"
@@ -165,7 +164,7 @@ fetch() {
 fetch_extract() {
 	local url="$1"
 	local checksum_sha256="$2"
-	local archive_name="$(basename "$url")"
+	local archive_name="${url##*/}"
 
 	fetch "$url" "$checksum_sha256"
 	extract_archive "$archive_name"
@@ -257,8 +256,8 @@ source_pkg_file() {
 source_pkg() {
 	local pkg_name="$1"
 	local pkg_file
-	local old_IFS=$IFS
-	IFS=$URL_SEP
+	local old_IFS="$IFS"
+	IFS="$URL_SEP"
 
 	for repo_url in $LOCALPKGENV_REPO_URLS; do
 		pkg_file="${repo_url}/$pkg_name"
@@ -287,7 +286,7 @@ source_pkg() {
 		esac
 	done
 
-	IFS=$old_IFS
+	IFS="$old_IFS"
 
 	[[ -n "$version" || "$metapkg" == "$METAPKG_DUMMY" ]]
 }
@@ -301,7 +300,9 @@ pkg_install() {
 		exit 1
 	fi
 
-	if [[ -f "${localenv_root}/${INSTALLED_DB}/${pkg_name}.version" ]]; then
+	local db_prefix="${localenv_root}/${INSTALLED_DB}/${pkg_name}"
+
+	if [[ -f "${db_prefix}.version" ]]; then
 		msg_printf "$pkg_name is available\n"
 		return 0
 	fi
@@ -414,14 +415,14 @@ pkg_install() {
 		(( arg_keep_build_dir == 0)) && rm -rf "$build_dir"
 
 		# Create installed database folders
-		mkdir -p "$(dirname "${localenv_root}/${INSTALLED_DB}/${pkg_name}")"
+		mkdir -p "${db_prefix%/*}"
 
 		# As prefix is $localenv_root, the complete folder structure from / is maintained inside $install_dir
-		find_printbase "${install_dir}/${localenv_root}" \( -type f -o -type l \) > "${localenv_root}/${INSTALLED_DB}/${pkg_name}.files"
+		find_printbase "${install_dir}/${localenv_root}" > "${db_prefix}.files"
 		cp -rp "${install_dir}/${localenv_root}"/* "${localenv_root}"
 		rm -rf "$install_dir"
 
-		echo "$version" > "${localenv_root}/${INSTALLED_DB}/${pkg_name}.version"
+		echo "$version" > "${db_prefix}.version"
 
 		# The db file is important for upgrading packages in the order they were installed!
 		# As the entries are not deleted upon uninstallation, over time, a dependence ordering
@@ -444,27 +445,46 @@ pkg_install() {
 pkg_uninstall() {
 	local localenv_root="$1"
 	local pkg_name="$2"
-	local install_file="${localenv_root}/${INSTALLED_DB}/${pkg_name}.files"
-	local version_file="${localenv_root}/${INSTALLED_DB}/${pkg_name}.version"
+	local db_prefix="${localenv_root}/${INSTALLED_DB}/${pkg_name}"
+	local files_file="${db_prefix}.files"
+	local version_file="${db_prefix}.version"
 
-	if [[ ! -f "$install_file" ]]; then
-		warning_printf "'$install_file' does not exist! Skipping...\n"
+	if [[ ! -f "$files_file" ]]; then
+		warning_printf "'$files_file' does not exist! Skipping...\n"
 		return 1
 	fi
 
 	msg_printf "Uninstalling $pkg_name ($(<"$version_file"))...\n"
 
 	while read filename; do
-		rm -f "${localenv_root}/$filename"
-	done < "$install_file"
+		# (1) First pass delete files and get directory depths
 
-	remove_empty_dirs "$localenv_root"
+		if [[ ! -d "${localenv_root}/$filename" ]]; then
+			rm -f "${localenv_root}/$filename"
+		else
+			# Get path depth for sorting: If we don't do this, directories
+			# which are higher up in the hierarchy are being tried to be
+			# deleted before its subdirectories, which could be empty, but
+			# because the subdirectories still exist, the parent won't be
+			# deleted.
+			local old_IFS="$IFS"
+			IFS="/"
+			local tmp=(${filename[@]})
+			printf "${#tmp[@]}:${filename}\n"
+			IFS="$old_IFS"
+		fi
+	done < "$files_file" | sort -rn |
+	while read filename; do
+		# (2) Then check for empty directories and delete if empty
+		filename="${filename#*:}"
+		remove_empty_dirs "${localenv_root}/$filename" 0
+	done
 
-	# Remove meta files after clearing directories, otherwise our root might get deleted!
-	rm "$install_file"
+	# Remove meta files
+	rm "$files_file"
 	rm "$version_file"
 
-	# Then clean up db separately
+	# Clean up installed db
 	remove_empty_dirs "${localenv_root}/${INSTALLED_DB}"
 
 	# Set package as uninstalled
@@ -569,8 +589,8 @@ cmd_uninstall() {
 }
 
 cmd_avail() {
-	local old_IFS=$IFS
-	IFS=$URL_SEP
+	local old_IFS="$IFS"
+	IFS="$URL_SEP"
 
 	for repo_url in $LOCALPKGENV_REPO_URLS; do
 		echo "Available packages: $repo_url"
@@ -595,7 +615,7 @@ cmd_avail() {
 		echo "-------------------------------------------------------------------------------"
 	done
 
-	IFS=$old_IFS
+	IFS="$old_IFS"
 }
 
 cmd_list() {
@@ -630,8 +650,8 @@ cmd_chenv() {
 
 sanitize_repo_urls() {
 	local old_repo_urls="$LOCALPKGENV_REPO_URLS"
-	local old_IFS=$IFS
-	IFS=$URL_SEP
+	local old_IFS="$IFS"
+	IFS="$URL_SEP"
 
 	LOCALPKGENV_REPO_URLS=""
 
@@ -642,7 +662,7 @@ sanitize_repo_urls() {
 		LOCALPKGENV_REPO_URLS+="${url};"
 	done
 
-	IFS=$old_IFS
+	IFS="$old_IFS"
 }
 
 # Get command line options
