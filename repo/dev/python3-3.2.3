@@ -27,13 +27,9 @@ build() {
 
 	patch -Np1 < _posixmodule.patch
 
-	./configure --prefix="$1"
+	LDFLAGS="-Wl,-rpath=$LD_RUN_PATH" ./configure --prefix="$1"
 	
-	# Note, that we shouldn't need CFLAGS and LDFLAGS as localpkgenv sets the
-	# LIBRARY_PATH and CPATH environment variables.
-	#CFLAGS="-I$1/include" LDFLAGS="-L$1/lib"
-
-	make LDFLAGS="-Wl,-rpath=$LD_RUN_PATH"
+	make 
 }
 
 installenv() {

@@ -38,7 +38,7 @@ build() {
 
 	cd "gdbm-${version}"
 
-	./configure --prefix="$1"
+	LDFLAGS="-Wl,-rpath=$LD_RUN_PATH" ./configure --prefix="$1"
 	make
 }
 

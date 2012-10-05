@@ -19,7 +19,7 @@ build() {
 
 	cd "gcc-${version}"
 
-	./configure \
+	LDFLAGS="-Wl,-rpath=$LD_RUN_PATH" ./configure \
 		--prefix="$1" \
 		--mandir="$1/share/man" \
 		--infodir="$1/share/info" \

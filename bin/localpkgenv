@@ -202,42 +202,59 @@ prompt_continue() {
 
 export_env() {
 	[[ ! -d "$1" ]] && return 1
-
 	local localenv_root="$(cd "$1" && pwd)"
 
-	verbose_printf "Using environment: $localenv_root\n"
-
-	# Export so calls to localpkgenv don't need the root; appending, so that 
-	# installing takes the first root.
 	if [[ -z "$LOCALPKGENV_ROOT" ]]; then
+		# Export so calls to localpkgenv don't need the root; appending, so that 
+		# installing takes the first root.
 		export LOCALPKGENV_ROOT="$localenv_root"
 	else
+		# Check if this has already been exported
+		# Also check CPATH, as I don't expect a user to set it for a localenv root.
+		[[ "$LOCALPKGENV_ROOT" =~ ^(.*:)?${localenv_root}(:.*)?$ &&
+			"$CPATH" =~ ^(.*:)?${localenv_root}/include(:.*)?$ ]] && return 0
+
 		export LOCALPKGENV_ROOT="$LOCALPKGENV_ROOT:${localenv_root}"
 	fi
 
+	verbose_printf "Exporting environment: $localenv_root\n"
+
 	# Prepending to PATH
-	[[ -d "${localenv_root}/bin" ]] && export PATH="${localenv_root}/bin:$PATH"
-	[[ -d "${localenv_root}/sbin" ]] && export PATH="${localenv_root}/sbin:$PATH"
+	export PATH="${localenv_root}/bin:$PATH"
+	export PATH="${localenv_root}/sbin:$PATH"
 
-	if [[ -d "${localenv_root}/lib" ]]; then
-		# LD_LIBRARY_PATH is harmful, as it makes programs from the system use
-		# the libraries found in $localenv_root/lib, which is certainly not
-		# considered stable.
-		# For more info: http://xahlee.info/UnixResource_dir/_/ldpath.html
-		#export LD_LIBRARY_PATH="${localenv_root}/lib:$LD_LIBRARY_PATH"
+	# LD_LIBRARY_PATH is harmful, as it makes programs from the system use
+	# the libraries found in $localenv_root/lib, which is certainly not
+	# considered stable.
+	# For more info: http://xahlee.info/UnixResource_dir/_/ldpath.html
 
-		# Instead, make programs include the correct search path when they are
-		# compiled (--rpath).
+	# Instead, make programs include the correct search path when they are
+	# compiled (--rpath).
+	if [[ -z "$LD_RUN_PATH" ]]; then
+		export LD_RUN_PATH="${localenv_root}/lib"
+	else
 		export LD_RUN_PATH="${localenv_root}/lib:$LD_RUN_PATH"
+	fi
 
-		# And make the linker look in the right paths (-L)
+	# And make the linker look in the right paths (-L)
+	if [[ -z "$LIBRARY_PATH" ]]; then
+		export LIBRARY_PATH="${localenv_root}/lib"
+	else
 		export LIBRARY_PATH="${localenv_root}/lib:$LIBRARY_PATH"
 	fi
 
-	[[ -d "${localenv_root}/lib/pkgconfig" ]] && export PKG_CONFIG_PATH="${localenv_root}/lib/pkgconfig:$PKG_CONFIG_PATH"
+	if [[ -z "$PKG_CONFIG_PATH" ]]; then
+		export PKG_CONFIG_PATH="${localenv_root}/lib/pkgconfig"
+	else
+		export PKG_CONFIG_PATH="${localenv_root}/lib/pkgconfig:$PKG_CONFIG_PATH"
+	fi
 
 	# C/C++ preprocessor search paths (-I)
-	[[ -d "${localenv_root}/include" ]] && export CPATH="${localenv_root}/include:$CPATH"
+	if [[ -z "$CPATH" ]]; then
+		export CPATH="${localenv_root}/include"
+	else
+		export CPATH="${localenv_root}/include:$CPATH"
+	fi
 
 	return 0
 }
