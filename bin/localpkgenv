@@ -250,13 +250,26 @@ cmd_showenv() {
 
 	# See export_env for why we are not exporting LD_LIBRARY_PATH
 
-	echo "export LOCALPKGENV_ROOT=\"$LOCALPKGENV_ROOT\""
-	[[ -n "$PATH" ]] && echo "export PATH=\"$PATH\""
-	#[[ -n "$LD_LIBRARY_PATH" ]] && echo "export LD_LIBRARY_PATH=\"$LD_LIBRARY_PATH\""
-	[[ -n "$LD_RUN_PATH" ]] && echo "export LD_RUN_PATH=\"$LD_RUN_PATH\""
-	[[ -n "$LIBRARY_PATH" ]] && echo "export LIBRARY_PATH=\"$LIBRARY_PATH\""
-	[[ -n "$PKG_CONFIG_PATH" ]] && echo "export PKG_CONFIG_PATH=\"$PKG_CONFIG_PATH\""
-	[[ -n "$CPATH" ]] && echo "export CPATH=\"$CPATH\""
+	case "$LOCALPKGENV_SHELL" in
+		*csh)
+			echo "setenv LOCALPKGENV_ROOT \"$LOCALPKGENV_ROOT\""
+			[[ -n "$PATH" ]] && echo "setenv PATH \"$PATH\""
+			[[ -n "$LD_RUN_PATH" ]] && echo "setenv LD_RUN_PATH \"$LD_RUN_PATH\""
+			[[ -n "$LIBRARY_PATH" ]] && echo "setenv LIBRARY_PATH \"$LIBRARY_PATH\""
+			[[ -n "$PKG_CONFIG_PATH" ]] && echo "setenv PKG_CONFIG_PATH \"$PKG_CONFIG_PATH\""
+			[[ -n "$CPATH" ]] && echo "setenv CPATH \"$CPATH\""
+			;;
+		*)
+			# Assume sh compatible shell (bash, zsh, ..)
+			echo "export LOCALPKGENV_ROOT=\"$LOCALPKGENV_ROOT\""
+			[[ -n "$PATH" ]] && echo "export PATH=\"$PATH\""
+			#[[ -n "$LD_LIBRARY_PATH" ]] && echo "export LD_LIBRARY_PATH=\"$LD_LIBRARY_PATH\""
+			[[ -n "$LD_RUN_PATH" ]] && echo "export LD_RUN_PATH=\"$LD_RUN_PATH\""
+			[[ -n "$LIBRARY_PATH" ]] && echo "export LIBRARY_PATH=\"$LIBRARY_PATH\""
+			[[ -n "$PKG_CONFIG_PATH" ]] && echo "export PKG_CONFIG_PATH=\"$PKG_CONFIG_PATH\""
+			[[ -n "$CPATH" ]] && echo "export CPATH=\"$CPATH\""
+			;;
+	esac
 }
 
 is_pkg_pointer() {
