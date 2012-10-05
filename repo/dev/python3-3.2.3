@@ -2,6 +2,8 @@
 version=3.2.3
 description="The Python 3 interpreter"
 depends=("dev/gdbm")
+website="http://www.python.org"
+license=('PSF')
 
 isinstalled() {
 	python3 --version 2>&1 | grep -q "$version" &> /dev/null

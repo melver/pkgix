@@ -2,6 +2,8 @@
 version=1.10
 description="GNU dbm"
 depends=()
+website="http://www.gnu.org/software/gdbm/gdbm.html"
+license=('GPL')
 
 isinstalled() {
 	local gdbmpath

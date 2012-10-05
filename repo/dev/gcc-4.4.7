@@ -2,6 +2,8 @@
 version=4.4.7
 description="The GCC compiler"
 depends=()
+website="http://gcc.gnu.org/"
+license=('GPL' 'LGPL' 'FDL' 'custom')
 
 isinstalled() {
 	gcc --version | grep -q "$version" &> /dev/null

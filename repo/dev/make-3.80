@@ -2,6 +2,8 @@
 version=3.80
 description="GNU Make"
 depends=()
+website="http://www.gnu.org/software/automake"
+license=('GPL')
 
 isinstalled() {
 	make -version | grep -q "$version" &> /dev/null
