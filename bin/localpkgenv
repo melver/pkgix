@@ -335,8 +335,8 @@ source_pkg_file() {
 		local resolved_pkg_name="$(<$pkg_file)"
 
 		if [[ -z "$resolved_pkg_name" ]]; then
-			error_printf "Empty package description file: $pkg_file\n"
-			exit $EXIT_ERR
+			error_printf "Empty package description file!\n"
+			return $RET_ERR
 		fi
 
 		msg_printf "Points to $resolved_pkg_name\n"
@@ -684,24 +684,17 @@ root_upgrade() {
 
 		installed_version="$(<$version_file)"
 
-		if ! (
+		(
 			if ! source_pkg "$pkg_name"; then
 				warning_printf "Could not find package description file for '$pkg_name', skipping upgrade...\n"
-				exit $EXIT_OK
-			fi
-
-			if [[ "$version" != "$installed_version" ]]; then
+			elif [[ "$version" != "$installed_version" ]]; then
 				msg_printf "\e[0;33mUpgrading\e[0m $pkg_name ($installed_version -> $version)\n"
-				exit $EXIT_ERR
+				pkg_uninstall "$localenv_root" "$pkg_name"
+				pkg_install "$localenv_root" "$pkg_name"
 			else
-				exit $EXIT_OK
+				msg_printf "$pkg_name ($installed_version) is up to date\n"
 			fi
-		); then
-			pkg_uninstall "$localenv_root" "$pkg_name"
-			pkg_install "$localenv_root" "$pkg_name"
-		else
-			msg_printf "$pkg_name ($installed_version) is up to date\n"
-		fi
+		)
 	done
 
 	msg_printf "Done upgrading.\n"
