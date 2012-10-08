@@ -49,6 +49,8 @@ EXIT_USER_ABORT=3
 #
 RET_OK=0
 RET_ERR=1
+RET_INVALID_OPTION=2
+RET_USER_ABORT=3
 
 ##
 # printf wrappers
@@ -661,8 +663,8 @@ root_upgrade() {
 	local localenv_root="$1"
 
 	if [[ ! -f "${localenv_root}/${INSTALLED_DB}.db" ]]; then
-		error_printf "'$localenv_root' is not a valid $PROGNAME root!\n"
-		exit $EXIT_ERR
+		warning_printf "'$localenv_root' is not a valid $PROGNAME root!\n"
+		return $RET_INVALID_OPTION
 	fi
 
 	localenv_root="$(cd "$localenv_root" && pwd)"
@@ -670,7 +672,7 @@ root_upgrade() {
 
 	msg_printf "Upgrading $localenv_root ...\n"
 
-	prompt_continue || exit $EXIT_USER_ABORT
+	prompt_continue || return $RET_USER_ABORT
 
 	grep "^i|" "${localenv_root}/${INSTALLED_DB}.db" |
 	while read pkg_name; do
@@ -694,8 +696,8 @@ root_upgrade() {
 			else
 				msg_printf "$pkg_name ($installed_version) is up to date\n"
 			fi
-		)
-	done
+		) || exit $?  # Break out of pipe-subshell
+	done || return $? # Take return code if pipe-subshell exited with errors
 
 	msg_printf "Done upgrading.\n"
 }
@@ -711,7 +713,7 @@ cmd_upgrade() {
 		# Run nested, not to pollute subsequent upgrades with export_env
 		# The environment should be set accordingly prior to upgrading!
 		( root_upgrade "$localenv_root" )
-		if (( $? != $EXIT_OK && $? != $EXIT_USER_ABORT )); then
+		if (( $? != RET_OK && $? != RET_INVALID_OPTION && $? != RET_USER_ABORT )); then
 			exit $EXIT_ERR
 		fi
 	done
