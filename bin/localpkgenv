@@ -543,10 +543,14 @@ pkg_install() {
 
 		echo "description=\"$description\"" > "${db_prefix}/info"
 		[[ -z "$description" ]] && warning_printf "Empty 'description' field in package description file of '$pkg_name'!\n"
+
 		echo "license=(${license[@]})" >> "${db_prefix}/info"
 		[[ -z "$license" ]] && warning_printf "Empty 'license' field in package description file of '$pkg_name'!\n"
+
 		echo "website=\"$website\"" >> "${db_prefix}/info"
 		[[ -z "$website" ]] && warning_printf "Empty 'website' field in package description file of '$pkg_name'!\n"
+
+		echo "installdate=\"$(date)\"" >> "${db_prefix}/info"
 
 		# The db file is important for upgrading packages in the order they were installed!
 		# As the entries are not deleted upon uninstallation, over time, a dependence ordering
@@ -823,9 +827,10 @@ cmd_show() {
 
 		. "$info_file"
 		echo "$pkg_name ($(<$version_file)):"
-		echo "Description : $description"
-		echo "Website     : $website"
-		echo "License     : ${license[@]}"
+		echo "Description  : $description"
+		echo "Website      : $website"
+		echo "License      : ${license[@]}"
+		echo "Install date : ${installdate}"
 		echo
 
 		unset description
