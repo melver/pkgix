@@ -369,7 +369,7 @@ source_pkg() {
 
 				verbose_printf "Trying: $pkg_file\n"
 				if wget -q -O "$tmpfile" "$pkg_file"; then
-					msg_printf "Source: \e[0;32m$pkg_file\e[0m\n"
+					verbose_printf "Source: \e[0;32m$pkg_file\e[0m\n"
 					source_pkg_file "$tmpfile"
 					rm "$tmpfile"
 					break
@@ -379,7 +379,7 @@ source_pkg() {
 			*)
 				verbose_printf "Trying: $pkg_file\n"
 				if [[ -f "$pkg_file" ]]; then
-					msg_printf "Source: \e[0;32m$pkg_file\e[0m\n"
+					verbose_printf "Source: \e[0;32m$pkg_file\e[0m\n"
 					source_pkg_file "$pkg_file"
 					break
 				fi
@@ -398,6 +398,7 @@ source_pkg() {
 pkg_install() {
 	local localenv_root="$1"
 	local pkg_name="$2"
+	local reinstall="${3:-0}"
 
 	if [[ ! -d "$localenv_root" ]]; then
 		error_printf "'$localenv_root' is not a valid directory!\n"
@@ -407,8 +408,13 @@ pkg_install() {
 	local db_prefix="${localenv_root}/${INSTALLED_DB}/${pkg_name}"
 
 	if [[ -f "${db_prefix}/version" ]]; then
-		msg_printf "$pkg_name is available\n"
-		return $RET_OK
+		if (( reinstall == 0 )); then
+			msg_printf "$pkg_name is available\n"
+			return $RET_OK
+		else
+			msg_printf "Reinstalling $pkg_name ...\n"
+			pkg_uninstall "$localenv_root" "$pkg_name"
+		fi
 	fi
 
 	# Nested, otherwise variables will get overwritten on recursive calls.
@@ -656,7 +662,7 @@ cmd_install() {
 
 	local pkg_name
 	for pkg_name in "$@"; do
-		pkg_install "$localenv_root" "$pkg_name"
+		pkg_install "$localenv_root" "$pkg_name" "$arg_reinstall"
 	done
 }
 
@@ -693,8 +699,10 @@ root_upgrade() {
 		(
 			if ! source_pkg "$pkg_name"; then
 				warning_printf "Could not find package description file for '$pkg_name', skipping upgrade...\n"
-			elif [[ "$version" != "$installed_version" ]]; then
-				msg_printf "\e[0;33mUpgrading\e[0m $pkg_name ($installed_version -> $version)\n"
+			elif [[ "$version" != "$installed_version" ]] || (( arg_reinstall != 0 )); then
+				msg_printf "\e[0;33mUpgrading\e[0m $pkg_name ($installed_version -> $version)"
+				(( arg_reinstall == 0 )) && printf "\n" || printf " - reinstall\n"
+
 				pkg_uninstall "$localenv_root" "$pkg_name"
 				pkg_install "$localenv_root" "$pkg_name"
 			else
@@ -935,6 +943,7 @@ case "$cmd" in
 	install|upgrade)
 		arg_force=0
 		arg_nodeps=0
+		arg_reinstall=0
 		arg_keep_build_dir=0
 		arg_ignore_checksums=0
 
@@ -942,6 +951,7 @@ case "$cmd" in
 			case "$1" in
 				-f|--force) arg_force=1 ;;
 				-d|--nodeps) arg_nodeps=1 ;;
+				--reinstall) arg_reinstall=1 ;;
 				--keep-build-dir) arg_keep_build_dir=1 ;;
 				--ignore-checksums) arg_ignore_checksums=1 ;;
 				*) break ;;
@@ -988,6 +998,9 @@ case "$cmd" in
 				echo "        <localenv-dir>; satisfied metapackages; incompatible with the current system."
 				echo "    -d, --nodeps"
 				echo "        Ignore dependenciy check and do not install dependencies."
+				echo "    --reinstall"
+				echo "        Reinstall non-dependency, explicitly selected packages. When upgrading,"
+				echo "        reinstall all installed packages."
 				echo "    --keep-build-dir"
 				echo "        Keeps the build directory."
 				echo "    --ignore-checksums"
