@@ -988,9 +988,15 @@ case "$cmd" in
 	help)
 		case "$1" in
 			install|upgrade)
-				echo "Usage: $PROGNAME $1 [-f|--force] [-d|--nodeps] [--keep-build-dir]"
-				echo "                   [--ignore-checksums]"
-				echo "                   <localenv-dir> <pkgs>..."
+				echo "Usage: $PROGNAME $1 [-f|--force] [-d|--nodeps] [--reinstall]"
+				echo "                   [--keep-build-dir] [--ignore-checksums]"
+
+				if [[ "$1" == "install" ]]; then
+					echo "                   <localenv-dir> <pkgs>..."
+				else
+					echo "                   <localenv-dirs>..."
+				fi
+
 				echo
 				echo "Options:"
 				echo "    -f, --force"
