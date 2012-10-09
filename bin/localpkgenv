@@ -393,12 +393,13 @@ source_pkg() {
 }
 
 ##
-# pkg_install localenv_root pkg_name
+# pkg_install localenv_root pkg_name [reinstall]
 #
 pkg_install() {
 	local localenv_root="$1"
 	local pkg_name="$2"
 	local reinstall="${3:-0}"
+	local is_reinstall=0
 
 	if [[ ! -d "$localenv_root" ]]; then
 		error_printf "'$localenv_root' is not a valid directory!\n"
@@ -412,8 +413,7 @@ pkg_install() {
 			msg_printf "$pkg_name is available\n"
 			return $RET_OK
 		else
-			msg_printf "Reinstalling $pkg_name ...\n"
-			pkg_uninstall "$localenv_root" "$pkg_name"
+			is_reinstall=1
 		fi
 	fi
 
@@ -478,7 +478,7 @@ pkg_install() {
 		# Run all commands from package description file in subshells
 		# so they can't clutter the namespace.
 
-		if ( isinstalled ); then
+		if (( is_reinstall == 0 )) && ( isinstalled ); then
 			if (( arg_force == 0 )); then
 				msg_printf "'$pkg_name' already available outside of '$localenv_root', skipping...\n"
 				exit $EXIT_OK
@@ -506,7 +506,7 @@ pkg_install() {
 			warning_printf "Ignoring dependencies.\n"
 		fi
 
-		msg_printf "Setting up $pkg_name ($version)\n"
+		msg_printf "Building $pkg_name ($version)...\n"
 
 		local build_dir="${localenv_root}/.${PROGNAME}-build"
 		local install_dir="${localenv_root}/.${PROGNAME}-tmpinstall"
@@ -524,6 +524,15 @@ pkg_install() {
 			error_printf "Building '$pkg_name' failed! Aborting.\n"
 			exit $EXIT_ERR
 		fi
+
+		if (( is_reinstall != 0 )); then
+			# Uninstall after build, so that if building a package depends on
+			# itself it is used rather than the system version (e.g., gcc).  If
+			# the system version should be used again: uninstall->install manually.
+			pkg_uninstall "$localenv_root" "$pkg_name"
+		fi
+
+		msg_printf "Installing $pkg_name ($version)...\n"
 
 		if ! ( installenv "$localenv_root" "$install_dir" ); then
 			popd &> /dev/null
@@ -703,8 +712,7 @@ root_upgrade() {
 				msg_printf "\e[0;33mUpgrading\e[0m $pkg_name ($installed_version -> $version)"
 				(( arg_reinstall == 0 )) && printf "\n" || printf " - reinstall\n"
 
-				pkg_uninstall "$localenv_root" "$pkg_name"
-				pkg_install "$localenv_root" "$pkg_name"
+				pkg_install "$localenv_root" "$pkg_name" 1
 			else
 				msg_printf "$pkg_name ($installed_version) is up to date\n"
 			fi
