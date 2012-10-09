@@ -447,7 +447,7 @@ pkg_install() {
 			[[ -z "$metapkg" ]] && break
 
 			# Is metapackage, check if satisfied
-			if satisfied; then
+			if (( is_reinstall == 0 )) && ( satisfied ); then
 				if (( arg_force == 0 )); then
 					msg_printf "Metapackage '$next_pkg_name' satisfied.\n"
 					exit $EXIT_OK
