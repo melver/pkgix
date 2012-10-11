@@ -803,7 +803,7 @@ cmd_upgrade() {
 #
 cmd_uninstall() {
 	local localenv_root="${1:-}"
-	shift
+	shift || { error_printf "No targets specified!\n"; exit $EXIT_ERR; }
 
 	if [[ ! -d "$localenv_root" ]]; then
 		error_printf "'$localenv_root' is not a valid directory!\n"
@@ -884,45 +884,61 @@ cmd_list() {
 # cmd_show localenv_root pkg_name...
 #
 cmd_show() {
-	local localenv_root="${1:-}"
-	shift
+	local localenv_roots=()
 
-	if [[ ! -d "$localenv_root" ]]; then
-		error_printf "'$localenv_root' is not a valid directory!\n"
-		exit $EXIT_ERR
+	if [[ "$*" =~ " -- " ]]; then
+		while [[ "$1" != "--" ]]; do
+			localenv_roots+=("$1")
+			shift || break
+		done
+	else
+		localenv_roots+=("${1:-}")
 	fi
 
+	shift || { error_printf "No targets specified!\n"; exit $EXIT_ERR; }
+
+	local pkg_name
+	local localenv_root
 	local db_prefix
 	local version_file
 	local info_file
-
 	for pkg_name in "$@"; do
-		db_prefix="${localenv_root}/${INSTALLED_DB}/${pkg_name}"
-		version_file="${db_prefix}/version"
-		info_file="${db_prefix}/info"
+		for localenv_root in "${localenv_roots[@]}"; do
+			if [[ ! -d "$localenv_root" ]]; then
+				error_printf "'$localenv_root' is not a valid directory!\n"
+				exit $EXIT_ERR
+			fi
 
-		if [[ ! -f "$version_file" ]]; then
-			error_printf "'$version_file' does not exist!\n"
+			db_prefix="${localenv_root}/${INSTALLED_DB}/${pkg_name}"
+			version_file="${db_prefix}/version"
+			info_file="${db_prefix}/info"
+
+			if [[ -f "$version_file" && -f "$info_file" ]]; then
+				source "$info_file"
+				echo "$pkg_name ($(<$version_file)):"
+				echo "Description  : ${description:-}"
+				echo "Website      : ${website:-}"
+				echo "License      : ${license[*]:+${license[*]}}"
+				echo "Install date : ${installdate:-}"
+				echo
+
+				unset description
+				unset website
+				unset license
+				unset installdate
+
+				# found
+				break
+			else
+				# indicate not yet found, continue search
+				db_prefix=""
+			fi
+		done
+
+		if [[ -z "$db_prefix" ]]; then
+			error_printf "'$pkg_name' was not found!\n"
 			exit $EXIT_ERR
 		fi
-
-		if [[ ! -f "$info_file" ]]; then
-			error_printf "'$info_file' does not exist!\n"
-			exit $EXIT_ERR
-		fi
-
-		source "$info_file"
-		echo "$pkg_name ($(<$version_file)):"
-		echo "Description  : ${description:-}"
-		echo "Website      : ${website:-}"
-		echo "License      : ${license[*]:+${license[*]}}"
-		echo "Install date : ${installdate:-}"
-		echo
-
-		unset description
-		unset website
-		unset license
-		unset installdate
 	done
 }
 
@@ -1064,7 +1080,7 @@ case "$cmd" in
 		done
 
 		;;& # Evaluate next statements!
-	install|uninstall|show)
+	install|uninstall)
 		if [[ -z "${LOCALPKGENV_ROOT:-}" ]]; then
 			cmd_$cmd "$@"
 		else
@@ -1074,14 +1090,18 @@ case "$cmd" in
 			cmd_$cmd "${args_root%%:*}" "$@"
 		fi
 		;;
-	upgrade|list|showenv|chenv)
+	upgrade|list|show|showenv|chenv)
 		if [[ -z "${LOCALPKGENV_ROOT:-}" ]]; then
 			cmd_$cmd "$@"
 		else
 			o_IFS="$IFS" ; IFS=":"
 			args_root=(${LOCALPKGENV_ROOT[@]})
 			IFS="$o_IFS" ; unset o_IFS
-			cmd_$cmd "${args_root[@]}" "$@"
+
+			case "$cmd" in
+				show) cmd_$cmd "${args_root[@]}" -- "$@" ;;
+				*)    cmd_$cmd "${args_root[@]}" "$@" ;;
+			esac
 		fi
 		;;
 	avail)
