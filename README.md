@@ -36,5 +36,5 @@ example of how to write package description files.
 
 List of known repository URLs:
 
-1. [localpkgenv-repo](https://github.com/melver/localpkgenv-repo): https://raw.github.com/melver/localpkgenv-repo/master/repo
+1. [localpkgenv-repo](https://github.com/melver/localpkgenv-repo): https://raw.github.com/melver/localpkgenv-repo/master/pkgs
 
