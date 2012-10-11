@@ -416,14 +416,26 @@ source_pkg() {
 }
 
 ##
-# pre_sourced_call
+# sourced_pkg_call funcname args...
+# Wrap sourced function call execution.
 #
 # Disable 'nounset' for calling sourced functions, as the complexity of package
 # description files should be small enough to trade some code safety for
 # convenience. Enable inside the functions if neccessary.
 #
-pre_sourced_call() {
-	set +o nounset
+sourced_pkg_call() {
+	local funcname=$1
+	shift || :
+
+	if ! type -p $funcname > /dev/null; then
+		error_printf "Package file does not provide function: $funcname\n"
+		exit $EXIT_ERR
+	fi
+
+	(
+		set +o nounset
+		$funcname "$@"
+	)
 }
 
 ##
@@ -450,6 +462,8 @@ pkg_install() {
 			is_reinstall=1
 		fi
 	fi
+
+	msg_printf "\e[1;36m=> $pkg_name\e[0m\n"
 
 	(
 		# Unset previous variables, otherwise we might end in an endless loop
@@ -479,7 +493,7 @@ pkg_install() {
 			[[ -z "${metapkg:-}" ]] && break
 
 			# Is metapackage, check if satisfied
-			if (( ! is_reinstall )) && ( pre_sourced_call; satisfied ); then
+			if (( ! is_reinstall )) && sourced_pkg_call satisfied; then
 				if (( ! arg_force )); then
 					msg_printf "Metapackage '$next_pkg_name' satisfied.\n"
 					exit $EXIT_OK
@@ -510,7 +524,7 @@ pkg_install() {
 		# Run all commands from package description file in subshells
 		# so they can't clutter the namespace.
 
-		if (( ! is_reinstall )) && ( pre_sourced_call; isinstalled ); then
+		if (( ! is_reinstall )) && sourced_pkg_call isinstalled; then
 			if (( ! arg_force )); then
 				msg_printf "'$pkg_name' already available outside of '$localenv_root', skipping...\n"
 				exit $EXIT_OK
@@ -519,7 +533,7 @@ pkg_install() {
 			fi
 		fi
 
-		if ! ( pre_sourced_call; iscompat ); then
+		if ! sourced_pkg_call iscompat; then
 			if (( ! arg_force )); then
 				error_printf "'$pkg_name' is not compatible with your system!\n"
 				exit $EXIT_ERR
@@ -547,16 +561,15 @@ pkg_install() {
 
 		pushd "$build_dir" &> /dev/null
 
-		# Setup traps
-		local trap_cmd="{ rm -rf \"$install_dir\";"
+		# Setup cleanup trap
+		local trap_cmd="{ popd &> /dev/null; rm -rf \"$install_dir\";"
 		(( ! arg_keep_build_dir )) && trap_cmd+=" rm -rf \"$build_dir\";"
 		trap_cmd+=" }"
 
 		trap "$trap_cmd" EXIT
 
 		# Run build and installenv in subshells
-		if ! ( pre_sourced_call; build "$localenv_root" "$install_dir" ); then
-			popd &> /dev/null
+		if ! sourced_pkg_call build "$localenv_root" "$install_dir"; then
 			error_printf "Building '$pkg_name' failed! Aborting.\n"
 			exit $EXIT_ERR
 		fi
@@ -570,8 +583,7 @@ pkg_install() {
 
 		msg_printf "Installing $pkg_name (${version:-})...\n"
 
-		if ! ( pre_sourced_call; installenv "$localenv_root" "$install_dir" ); then
-			popd &> /dev/null
+		if ! sourced_pkg_call installenv "$localenv_root" "$install_dir"; then
 			error_printf "Installation of '$pkg_name' failed! Aborting.\n"
 			exit $EXIT_ERR
 		fi
