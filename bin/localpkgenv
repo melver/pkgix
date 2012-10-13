@@ -325,21 +325,21 @@ cmd_showenv() {
 
 	case "$LOCALPKGENV_SHELL" in
 		*csh)
-			[[ -n "${LOCALPKGENV_ROOT:-}" ]] && echo "setenv LOCALPKGENV_ROOT \"$LOCALPKGENV_ROOT\""
-			[[ -n "${PATH:-}" ]] && echo "setenv PATH \"$PATH\""
-			[[ -n "${LD_RUN_PATH:-}" ]] && echo "setenv LD_RUN_PATH \"$LD_RUN_PATH\""
-			[[ -n "${LIBRARY_PATH:-}" ]] && echo "setenv LIBRARY_PATH \"$LIBRARY_PATH\""
-			[[ -n "${PKG_CONFIG_PATH:-}" ]] && echo "setenv PKG_CONFIG_PATH \"$PKG_CONFIG_PATH\""
-			[[ -n "${CPATH:-}" ]] && echo "setenv CPATH \"$CPATH\""
+			[[ -n "${LOCALPKGENV_ROOT:-}" ]] && echo "setenv LOCALPKGENV_ROOT \"$LOCALPKGENV_ROOT\"" || :
+			[[ -n "${PATH:-}" ]] && echo "setenv PATH \"$PATH\"" || :
+			[[ -n "${LD_RUN_PATH:-}" ]] && echo "setenv LD_RUN_PATH \"$LD_RUN_PATH\"" || :
+			[[ -n "${LIBRARY_PATH:-}" ]] && echo "setenv LIBRARY_PATH \"$LIBRARY_PATH\"" || :
+			[[ -n "${PKG_CONFIG_PATH:-}" ]] && echo "setenv PKG_CONFIG_PATH \"$PKG_CONFIG_PATH\"" || :
+			[[ -n "${CPATH:-}" ]] && echo "setenv CPATH \"$CPATH\"" || :
 			;;
 		*)
 			# Assume sh compatible shell (bash, zsh, ..)
-			[[ -n "${LOCALPKGENV_ROOT:-}" ]] && echo "export LOCALPKGENV_ROOT=\"$LOCALPKGENV_ROOT\""
-			[[ -n "${PATH:-}" ]] && echo "export PATH=\"$PATH\""
-			[[ -n "${LD_RUN_PATH:-}" ]] && echo "export LD_RUN_PATH=\"$LD_RUN_PATH\""
-			[[ -n "${LIBRARY_PATH:-}" ]] && echo "export LIBRARY_PATH=\"$LIBRARY_PATH\""
-			[[ -n "${PKG_CONFIG_PATH:-}" ]] && echo "export PKG_CONFIG_PATH=\"$PKG_CONFIG_PATH\""
-			[[ -n "${CPATH:-}" ]] && echo "export CPATH=\"$CPATH\""
+			[[ -n "${LOCALPKGENV_ROOT:-}" ]] && echo "export LOCALPKGENV_ROOT=\"$LOCALPKGENV_ROOT\"" || :
+			[[ -n "${PATH:-}" ]] && echo "export PATH=\"$PATH\"" || :
+			[[ -n "${LD_RUN_PATH:-}" ]] && echo "export LD_RUN_PATH=\"$LD_RUN_PATH\"" || :
+			[[ -n "${LIBRARY_PATH:-}" ]] && echo "export LIBRARY_PATH=\"$LIBRARY_PATH\"" || :
+			[[ -n "${PKG_CONFIG_PATH:-}" ]] && echo "export PKG_CONFIG_PATH=\"$PKG_CONFIG_PATH\"" || :
+			[[ -n "${CPATH:-}" ]] && echo "export CPATH=\"$CPATH\"" || :
 			;;
 	esac
 }
@@ -416,7 +416,7 @@ source_pkg() {
 }
 
 ##
-# sourced_pkg_call funcname args...
+# sourced_pkg_call funcname [localenv_root [install_dir]]
 # Wrap sourced function call execution.
 #
 # Disable 'nounset' for calling sourced functions, as the complexity of package
@@ -425,7 +425,6 @@ source_pkg() {
 #
 sourced_pkg_call() {
 	local funcname=$1
-	shift || :
 
 	if ! type -p $funcname > /dev/null; then
 		error_printf "Package file does not provide function: $funcname\n"
@@ -433,8 +432,14 @@ sourced_pkg_call() {
 	fi
 
 	(
+		# Optional Arguments, passed as globals
+		if [[ -n "${2:-}" ]]; then
+			prefix="$2"
+			[[ -n "${3:-}" ]] && destdir="$3"
+		fi
+
 		set +o nounset
-		$funcname "$@"
+		$funcname
 	)
 }
 
