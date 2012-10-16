@@ -80,7 +80,8 @@ warning_printf() {
 #
 case "$OSTYPE" in
 	*freebsd*|*FreeBSD*)
-		platform="freebsd"
+		ostype="freebsd"
+		architecture="$(uname -m)"
 
 		sha256checksum() {
 			sha256 "$@"
@@ -91,7 +92,8 @@ case "$OSTYPE" in
 		}
 		;;
 	*|*linux*)
-		platform="$OSTYPE"
+		ostype="$OSTYPE"
+		architecture="$(uname -m)"
 
 		sha256checksum() {
 			sha256sum "$@"
