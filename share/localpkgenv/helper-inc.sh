@@ -39,10 +39,10 @@ localpkgenv-deactivate() {
 	unset LOCALPKGENV_ROOT
 
 	export PATH="$_OLD_PATH"
-	export LD_RUN_PATH="$LD_RUN_PATH"
-	export LIBRARY_PATH="$LIBRARY_PATH"
-	export PKG_CONFIG_PATH="$PKG_CONFIG_PATH"
-	export CPATH="$CPATH"
+	export LD_RUN_PATH="$_OLD_LD_RUN_PATH"
+	export LIBRARY_PATH="$_OLD_LIBRARY_PATH"
+	export PKG_CONFIG_PATH="$_OLD_PKG_CONFIG_PATH"
+	export CPATH="$_OLD_CPATH"
 
 	PS1="$_OLD_PS1"
 }
