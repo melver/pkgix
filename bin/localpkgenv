@@ -440,7 +440,7 @@ sourced_pkg_call() {
 			[[ -n "${3:-}" ]] && destdir="$3"
 		fi
 
-		set +o nounset
+		(( ! arg_debug )) && set +o nounset || :
 		$funcname
 	)
 }
@@ -980,7 +980,7 @@ sanitize_repo_urls() {
 }
 
 prog_usage() {
-	echo "Usage: $PROGNAME [-r|--repo-urls] [-n|--noconfirm] [-v|--verbose]"
+	echo "Usage: $PROGNAME [-r|--repo-urls] [-n|--noconfirm] [-v|--verbose] [--debug]"
 	echo "                   <command> [<args>]"
 	echo
 	echo "Commands available:"
@@ -1001,6 +1001,8 @@ prog_usage() {
 	echo "       Proceed without asking the user for confirmation."
 	echo "   -v, --verbose"
 	echo "       Be more verbose."
+	echo "   --debug"
+	echo "       Debug mode: enable nounset for package files"
 	echo "   -h, --help"
 	echo "       Display this help message."
 	echo "   -V, --version"
@@ -1044,6 +1046,7 @@ reset_traps
 # Get command line options
 arg_verbose=0
 arg_noconfirm=0
+arg_debug=0
 
 while :; do
 	case "${1:-}" in
@@ -1055,6 +1058,7 @@ while :; do
 			;;
 		-v|--verbose) arg_verbose=1 ;;
 		-n|--noconfirm) arg_noconfirm=1 ;;
+		--debug) arg_debug=1 ;;
 		-h|--help) prog_usage; exit $EXIT_OK ;;
 		-V|--version) prog_version; exit $EXIT_OK ;;
 		*) break ;;
