@@ -24,11 +24,12 @@ set -o nounset
 ##
 # Constants
 #
-PROG_VERSION="0.1.1"
+PROG_VERSION="0.1.2"
 PROGNAME="localpkgenv"
 INSTALLED_DB="var/lib/${PROGNAME}/installed"
 URL_SEP=";"
 METAPKG_DUMMY="_dummy"
+readonly PROG_VERSION PROGNAME INSTALLED_DB URL_SEP METAPKG_DUMMY
 
 ##
 # Exit codes
@@ -37,6 +38,7 @@ EXIT_OK=0
 EXIT_ERR=1
 EXIT_INVALID_OPTION=2
 EXIT_USER_ABORT=3
+readonly EXIT_OK EXIT_ERR EXIT_INVALID_OPTION EXIT_USER_ABORT
 
 ##
 # Function return codes
@@ -45,6 +47,7 @@ RET_OK=0
 RET_ERR=1
 RET_INVALID_OPTION=2
 RET_USER_ABORT=3
+readonly RET_OK RET_ERR RET_INVALID_OPTION RET_USER_ABORT
 
 ##
 # Configurable variables, settable via environment
@@ -52,15 +55,70 @@ RET_USER_ABORT=3
 : ${LOCALPKGENV_REPO_URLS:="${HOME}/${PROGNAME}-repo/pkgs"}
 : ${LOCALPKGENV_SHELL:="$SHELL"}
 : ${LOCALPKGENV_FETCH:="wget -O %s"}
+: ${LOCALPKGENV_COLOR:=1}
 
 # LOCALPKGENV_ROOT: If set, LOCALPKGENV_ROOT is being used as the default
 # root (no need to specify for each command).
 
 ##
+# Color config
+#
+# Check if color is enabled and we have stderr on terminal
+if [[ "$LOCALPKGENV_COLOR" != "0" && -t 2 ]]; then
+	# Check if we have tput
+	if type -p tput > /dev/null; then
+		Crst="$(tput sgr0)"
+		Cred="$(tput setaf 1)"
+		Cgrn="$(tput setaf 2)"
+		Cylw="$(tput setaf 3)"
+		Cblu="$(tput setaf 4)"
+		Cpur="$(tput setaf 5)"
+		Ccyn="$(tput setaf 6)"
+		_tput_bold="$(tput bold)"
+		CredB="${_tput_bold}${Cred}"
+		CgrnB="${_tput_bold}${Cgrn}"
+		CylwB="${_tput_bold}${Cylw}"
+		CbluB="${_tput_bold}${Cblu}"
+		CpurB="${_tput_bold}${Cpur}"
+		CcynB="${_tput_bold}${Ccyn}"
+		unset _tput_bold
+	else
+		# Fallback
+		Crst='\e[0m'
+		Cred='\e[0;31m'
+		Cgrn='\e[0;32m'
+		Cylw='\e[0;33m'
+		Cblu='\e[0;34m'
+		Cpur='\e[0;35m'
+		Ccyn='\e[0;36m'
+		CredB='\e[1;31m'
+		CgrnB='\e[1;32m'
+		CylwB='\e[1;33m'
+		CbluB='\e[1;34m'
+		CpurB='\e[1;35m'
+		CcynB='\e[1;36m'
+	fi
+else
+	Crst=
+	Cred=
+	Cgrn=
+	Cylw=
+	Cblu=
+	Cpur=
+	Ccyn=
+	CredB=
+	CgrnB=
+	CylwB=
+	CbluB=
+	CpurB=
+	CcynB=
+fi
+
+##
 # printf wrappers
 #
 msg_printf() {
-	printf "\e[0;35m[${PROGNAME}]\e[0m ""$@" 1>&2
+	printf "${Cpur}[${PROGNAME}]${Crst} ""$@" 1>&2
 }
 
 verbose_printf() {
@@ -68,15 +126,16 @@ verbose_printf() {
 }
 
 error_printf() {
-	msg_printf "\e[0;31mERROR:\e[0m ""$@"
+	msg_printf "${Cred}ERROR:${Crst} ""$@"
 }
 
 warning_printf() {
-	msg_printf "\e[0;31mWARNING:\e[0m ""$@"
+	msg_printf "${Cred}WARNING:${Crst} ""$@"
 }
 
 ##
 # OS dependent functions
+# Also set ostype and architecture (aliases to OS and arch name)
 #
 case "$OSTYPE" in
 	*freebsd*|*FreeBSD*)
@@ -230,7 +289,7 @@ prompt_continue() {
 
 	local answer
 
-	printf "\e[1;34mContinue ? [Y/n] \e[0m"
+	printf "${CbluB}Continue ? [Y/n] ${Crst}"
 	read answer
 
 	if [[ ! "$answer" =~ ^[yY]|^$ ]]; then
@@ -394,7 +453,7 @@ source_pkg() {
 
 				verbose_printf "Trying: $pkg_file\n"
 				if wget -q -O "$tmpfile" "$pkg_file"; then
-					verbose_printf "Source: \e[0;32m$pkg_file\e[0m\n"
+					verbose_printf "Source: ${Cgrn}$pkg_file${Crst}\n"
 					source_pkg_file "$tmpfile"
 					rm "$tmpfile"
 					break
@@ -404,7 +463,7 @@ source_pkg() {
 			*)
 				verbose_printf "Trying: $pkg_file\n"
 				if [[ -f "$pkg_file" ]]; then
-					verbose_printf "Source: \e[0;32m$pkg_file\e[0m\n"
+					verbose_printf "Source: ${Cgrn}$pkg_file${Crst}\n"
 					source_pkg_file "$pkg_file"
 					break
 				fi
@@ -470,7 +529,7 @@ pkg_install() {
 		fi
 	fi
 
-	msg_printf "\e[1;36m=> $pkg_name\e[0m\n"
+	msg_printf "${CcynB}=> $pkg_name${Crst}\n"
 
 	(
 		# Unset previous variables, otherwise we might end in an endless loop
@@ -771,7 +830,7 @@ root_upgrade() {
 			if ! source_pkg "$pkg_name"; then
 				warning_printf "Could not find package description file for '$pkg_name', skipping upgrade...\n"
 			elif [[ "${version:-}" != "$installed_version" ]] || (( arg_reinstall )); then
-				msg_printf "\e[0;33mUpgrading\e[0m $pkg_name ($installed_version -> ${version:-})"
+				msg_printf "${Cylw}Upgrading${Crst} $pkg_name ($installed_version -> ${version:-})"
 				(( ! arg_reinstall )) && printf "\n" || printf " - reinstall\n"
 
 				pkg_install "$localenv_root" "$pkg_name" 1
@@ -836,7 +895,7 @@ cmd_avail() {
 
 	local repo_url
 	for repo_url in $LOCALPKGENV_REPO_URLS; do
-		printf "\e[1;34m-> \e[1;32m${repo_url}\e[0m\n"
+		printf "${CbluB}-> ${CgrnB}${repo_url}${Crst}\n"
 		case "$repo_url" in
 			http://*|https://*)
 				msg_printf "Listing packages for a HTTP repository is not supported!\n"
@@ -869,7 +928,7 @@ cmd_list() {
 	for localenv_root in "$@"; do
 		if [[ -d "$localenv_root" ]]; then
 			localenv_root="$(cd "$localenv_root" && pwd)"
-			printf "\e[1;32m${localenv_root}\e[0m\n" 1>&2
+			printf "${CgrnB}${localenv_root}${Crst}\n" 1>&2
 
 			if [[ -d "${localenv_root}/${INSTALLED_DB}" ]]; then
 				find "${localenv_root}/${INSTALLED_DB}" -type f -name "version" | sort |
@@ -1030,7 +1089,7 @@ trap_ERR() {
 	shift 3
 	local traceback=""
 
-	[[ -n "$*" ]] && printf -v traceback "\n    \e[1;31m=>\e[0m in %s" "$@"
+	[[ -n "$*" ]] && printf -v traceback "\n    ${CredB}=>${Crst} in %s" "$@"
 	error_printf "line ${lineno} - '$command' failed (code=${errcode})${traceback}\n"
 	exit 42
 }
