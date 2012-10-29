@@ -448,7 +448,7 @@ source_pkg() {
 		pkg_file="${repo_url}/$pkg_name"
 
 		case "$pkg_file" in
-			http://*|https://*)
+			http://*|https://*|ftp://*)
 				local tmpfile="$(mktemp)"
 
 				verbose_printf "Trying: $pkg_file\n"
@@ -522,7 +522,7 @@ pkg_install() {
 
 	if [[ -f "${db_prefix}/version" ]]; then
 		if (( ! reinstall )); then
-			msg_printf "$pkg_name is available\n"
+			msg_printf "${Cgrn}$pkg_name${Crst} is available\n"
 			return $RET_OK
 		else
 			is_reinstall=1
@@ -610,7 +610,7 @@ pkg_install() {
 		fi
 
 		if (( ! arg_nodeps )); then
-			msg_printf "Resolving $pkg_name dependencies...\n"
+			msg_printf "${Cgrn}$pkg_name (${version:-})${Crst} resolving dependencies...\n"
 			local dep_name
 			for dep_name in "${depends[@]:+${depends[@]}}"; do
 				pkg_install "$localenv_root" "$dep_name"
@@ -619,7 +619,7 @@ pkg_install() {
 			warning_printf "Ignoring dependencies.\n"
 		fi
 
-		msg_printf "Building $pkg_name (${version:-})...\n"
+		msg_printf "${Cgrn}$pkg_name (${version:-})${Crst} building...\n"
 
 		local build_dir="${localenv_root}/.${PROGNAME}-build"
 		local install_dir="${localenv_root}/.${PROGNAME}-tmpinstall"
@@ -640,24 +640,36 @@ pkg_install() {
 			exit $EXIT_ERR
 		fi
 
-		if (( is_reinstall )); then
-			# Uninstall after build, so that if building a package depends on
-			# itself it is used rather than the system version (e.g., gcc).  If
-			# the system version should be used again: uninstall->install manually.
-			pkg_uninstall "$localenv_root" "$pkg_name"
-		fi
-
-		msg_printf "Installing $pkg_name (${version:-})...\n"
+		msg_printf "${Cgrn}$pkg_name (${version:-})${Crst} installing into staging area...\n"
 
 		if ! sourced_pkg_call installenv "$localenv_root" "$install_dir"; then
 			error_printf "Installation of '$pkg_name' failed! Aborting.\n"
 			exit $EXIT_ERR
 		fi
 
-		trap - EXIT
+		if (( is_reinstall )); then
+			# Uninstall after build/installenv, so that if building/installing
+			# a package depends on itself it is used rather than the system
+			# version (e.g., gcc, make).  If the system version should be used
+			# again: uninstall->install manually.
+			pkg_uninstall "$localenv_root" "$pkg_name"
+		fi
 
-		popd &> /dev/null
-		(( ! arg_keep_build_dir )) && rm -rf "$build_dir"
+		# Check for file conflicts before copying from install_dir to localenv_root
+		if (( ! arg_force )); then
+			msg_printf "${Cgrn}$pkg_name (${version:-})${Crst} checking for file conflicts...\n"
+			find_printbase "${install_dir}/${localenv_root}" ! -type d |
+			while read path; do
+				if [[ -e "${localenv_root}/${path}" ]]; then
+					error_printf "Conflict detected: ${path}\n"
+					exit $EXIT_ERR
+				fi
+			done || exit $?
+		else
+			warning_printf "Skipping file conflict check.\n"
+		fi
+
+		msg_printf "${Cgrn}$pkg_name (${version:-})${Crst} installing...\n"
 
 		# Create installed database folders
 		mkdir -p "${db_prefix}"
@@ -665,17 +677,20 @@ pkg_install() {
 		if [[ -d "${install_dir}/${localenv_root}" ]]; then
 			# As prefix is $localenv_root, the complete folder structure from / is maintained inside $install_dir
 			find_printbase "${install_dir}/${localenv_root}" > "${db_prefix}/files"
-			cp -rp "${install_dir}/${localenv_root}"/* "${localenv_root}"
+			cp -a "${install_dir}/${localenv_root}"/* "${localenv_root}"
 		else
 			warning_printf "Package did not install any files.\n"
 			: > "${db_prefix}/files"
 		fi
 
+		trap - EXIT
+		popd &> /dev/null
+		(( ! arg_keep_build_dir )) && rm -rf "$build_dir"
 		rm -rf "$install_dir"
 
 		# Run postinstall if available
 		if type -p postinstall > /dev/null; then
-			msg_printf "Post-install $pkg_name (${version:-})...\n"
+			msg_printf "${Cgrn}$pkg_name (${version:-})${Crst} post-install...\n"
 			if ! sourced_pkg_call postinstall "$localenv_root"; then
 				warning_printf "Post-installation step failed!\n"
 			fi
@@ -707,7 +722,7 @@ pkg_install() {
 			echo "i|$pkg_name" >> "$db_file"
 		fi
 
-		msg_printf "Done installing $pkg_name (${version:-})\n"
+		msg_printf "${CgrnB}$pkg_name (${version:-})${Crst} successfully installed.\n"
 	) || exit $?
 
 	return $RET_OK
@@ -729,7 +744,7 @@ pkg_uninstall() {
 		exit $EXIT_ERR
 	fi
 
-	msg_printf "Uninstalling $pkg_name ($(<"$version_file"))...\n"
+	msg_printf "${Cgrn}$pkg_name ($(<"$version_file"))${Crst} uninstalling...\n"
 
 	while read filename; do
 		# (1) First pass delete files and get directory depths
@@ -764,7 +779,7 @@ pkg_uninstall() {
 	# Set package as uninstalled
 	sed -i "s:^.|${pkg_name}$:u|${pkg_name}:" "${localenv_root}/${INSTALLED_DB}.db"
 
-	msg_printf "Done uninstalling $pkg_name\n"
+	msg_printf "${CgrnB}$pkg_name${Crst} successfully uninstalled.\n"
 }
 
 ##
@@ -905,7 +920,7 @@ cmd_avail() {
 	for repo_url in $LOCALPKGENV_REPO_URLS; do
 		printf "${CbluB}-> ${CgrnB}${repo_url}${Crst}\n"
 		case "$repo_url" in
-			http://*|https://*)
+			http://*|https://*|ftp://*)
 				msg_printf "Listing packages for a HTTP repository is not supported!\n"
 				;;
 			*)
@@ -1063,7 +1078,7 @@ prog_usage() {
 	echo "Options:"
 	echo "   -r, --repo-urls"
 	echo "       Specify additional package repository URL; use '$URL_SEP' to separate multiple repositories."
-	echo "       Currently supported protocols are: file://, http://, https://"
+	echo "       Currently supported protocols are: file:// (default), http://, https://, ftp://"
 	echo "   -n, --noconfirm"
 	echo "       Proceed without asking the user for confirmation."
 	echo "   -v, --verbose"
@@ -1201,7 +1216,8 @@ case "$cmd" in
 				echo "Options:"
 				echo "    -f, --force"
 				echo "        Force installation of programs that are: already available outside of"
-				echo "        <localenv-dir>; satisfied metapackages; incompatible with the current system."
+				echo "        <localenv-dir>; satisfied metapackages; incompatible with the current system;"
+				echo "        conflicting with already installed files."
 				echo "    -d, --nodeps"
 				echo "        Ignore dependenciy check and do not install dependencies."
 				echo "    --reinstall"
