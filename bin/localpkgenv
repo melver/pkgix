@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-# localpkgenv: Local environment and package management helper script.
+#
+# localpkgenv: Local environment and simple package management tool.
 #
 # Copyright (C) 2012, Marco Elver <me AT marcoelver.com>
 #
@@ -16,6 +17,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
 
 set -o errtrace
 set -o errexit
@@ -1083,7 +1085,7 @@ prog_usage() {
 	echo "       Proceed without asking the user for confirmation."
 	echo "   -v, --verbose"
 	echo "       Be more verbose."
-	echo "   --debug"
+	echo "   -d, --debug"
 	echo "       Debug mode: enable nounset for package files"
 	echo "   -h, --help"
 	echo "       Display this help message."
@@ -1140,7 +1142,7 @@ while :; do
 			;;
 		-v|--verbose) arg_verbose=1 ;;
 		-n|--noconfirm) arg_noconfirm=1 ;;
-		--debug) arg_debug=1 ;;
+		-d|--debug) arg_debug=1 ;;
 		-h|--help) prog_usage; exit $EXIT_OK ;;
 		-V|--version) prog_version; exit $EXIT_OK ;;
 		*) break ;;
@@ -1164,8 +1166,8 @@ case "$cmd" in
 			case "${1:-}" in
 				-f|--force) arg_force=1 ;;
 				-d|--nodeps) arg_nodeps=1 ;;
-				--reinstall) arg_reinstall=1 ;;
-				--keep-build-dir) arg_keep_build_dir=1 ;;
+				-r|--reinstall) arg_reinstall=1 ;;
+				-k|--keep-build-dir) arg_keep_build_dir=1 ;;
 				--ignore-checksums) arg_ignore_checksums=1 ;;
 				*) break ;;
 			esac
@@ -1203,8 +1205,8 @@ case "$cmd" in
 	help)
 		case "${1:-}" in
 			install|upgrade)
-				echo "Usage: $PROGNAME $1 [-f|--force] [-d|--nodeps] [--reinstall]"
-				echo "                   [--keep-build-dir] [--ignore-checksums]"
+				echo "Usage: $PROGNAME $1 [-f|--force] [-d|--nodeps] [-r|--reinstall]"
+				echo "                   [-k|--keep-build-dir] [--ignore-checksums]"
 
 				if [[ "$1" == "install" ]]; then
 					echo "                   <localenv-dir> <pkgs>..."
@@ -1220,10 +1222,10 @@ case "$cmd" in
 				echo "        conflicting with already installed files."
 				echo "    -d, --nodeps"
 				echo "        Ignore dependenciy check and do not install dependencies."
-				echo "    --reinstall"
+				echo "    -r, --reinstall"
 				echo "        Reinstall non-dependency, explicitly selected packages. When upgrading,"
 				echo "        reinstall all installed packages."
-				echo "    --keep-build-dir"
+				echo "    -k, --keep-build-dir"
 				echo "        Keeps the build directory."
 				echo "    --ignore-checksums"
 				echo "        Ignores checksums for remotely fetched files."
