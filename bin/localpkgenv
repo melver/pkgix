@@ -545,6 +545,7 @@ pkg_install() {
 		unset isinstalled
 		unset build
 		unset installenv
+		unset postinstall
 
 		# Source package description file and try to traverse until a non-meta
 		# package description is found.
@@ -634,7 +635,6 @@ pkg_install() {
 
 		trap "$trap_cmd" EXIT
 
-		# Run build and installenv in subshells
 		if ! sourced_pkg_call build "$localenv_root" "$install_dir"; then
 			error_printf "Building '$pkg_name' failed! Aborting.\n"
 			exit $EXIT_ERR
@@ -672,6 +672,14 @@ pkg_install() {
 		fi
 
 		rm -rf "$install_dir"
+
+		# Run postinstall if available
+		if type -p postinstall > /dev/null; then
+			msg_printf "Post-install $pkg_name (${version:-})...\n"
+			if ! sourced_pkg_call postinstall "$localenv_root"; then
+				warning_printf "Post-installation step failed!\n"
+			fi
+		fi
 
 		echo "${version:-}" > "${db_prefix}/version"
 		[[ -z "${version:-}" ]] && warning_printf "Empty 'version' field in package description file of '$pkg_name'!\n"
