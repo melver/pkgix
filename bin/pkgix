@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 #
-# localpkgenv: Local environment and simple package management tool.
+# pkgix: Prefix environment and simple package management tool.
 #
 # Copyright (C) 2012, Marco Elver <me AT marcoelver.com>
 #
@@ -26,8 +26,8 @@ set -o nounset
 ##
 # Constants
 #
-PROG_VERSION="0.1.2"
-PROGNAME="localpkgenv"
+PROG_VERSION="0.1.3"
+PROGNAME="pkgix"
 INSTALLED_DB="var/lib/${PROGNAME}/installed"
 URL_SEP=";"
 METAPKG_DUMMY="_dummy"
@@ -54,19 +54,19 @@ readonly RET_OK RET_ERR RET_INVALID_OPTION RET_USER_ABORT
 ##
 # Configurable variables, settable via environment
 #
-: ${LOCALPKGENV_REPO_URLS:="${HOME}/${PROGNAME}-repo/pkgs"}
-: ${LOCALPKGENV_SHELL:="$SHELL"}
-: ${LOCALPKGENV_FETCH:="wget -O %s"}
-: ${LOCALPKGENV_COLOR:=1}
+: ${PKGIX_REPO_URLS:="${HOME}/${PROGNAME}-repo/pkgs"}
+: ${PKGIX_SHELL:="$SHELL"}
+: ${PKGIX_FETCH:="wget -O %s"}
+: ${PKGIX_COLOR:=1}
 
-# LOCALPKGENV_ROOT: If set, LOCALPKGENV_ROOT is being used as the default
+# PKGIX_ROOT: If set, PKGIX_ROOT is being used as the default
 # root (no need to specify for each command).
 
 ##
 # Color config
 #
 # Check if color is enabled and we have stderr on terminal
-if [[ "$LOCALPKGENV_COLOR" != "0" && -t 2 ]]; then
+if [[ "$PKGIX_COLOR" != "0" && -t 2 ]]; then
 	# Check if we have tput
 	if type -p tput > /dev/null; then
 		Crst="$(tput sgr0)"
@@ -236,7 +236,7 @@ fetch() {
 			fi
 		else
 			local fetch_cmd
-			printf -v fetch_cmd "$LOCALPKGENV_FETCH" "$file_name"
+			printf -v fetch_cmd "$PKGIX_FETCH" "$file_name"
 			msg_printf "Fetching '$url'...\n"
 			if ! $fetch_cmd "$url"; then
 				error_printf "Fetching '$url' failed!\n"
@@ -318,44 +318,44 @@ prompt_continue() {
 }
 
 ##
-# export_env localenv_root
+# export_env pkgix_root
 #
 export_env() {
 	[[ ! -d "${1:-}" ]] && return $RET_ERR
-	local localenv_root="$(cd "$1" && pwd)"
+	local pkgix_root="$(cd "$1" && pwd)"
 
-	if [[ -z "${LOCALPKGENV_ROOT:-}" ]]; then
-		# Export so calls to localpkgenv don't need the root; appending, so that 
+	if [[ -z "${PKGIX_ROOT:-}" ]]; then
+		# Export so calls to pkgix don't need the root; appending, so that 
 		# installing takes the first root.
-		export LOCALPKGENV_ROOT="$localenv_root"
+		export PKGIX_ROOT="$pkgix_root"
 	else
 		# Check if this has already been exported
-		# Also check CPATH, as I don't expect a user to set it for a localenv root.
-		[[ "$LOCALPKGENV_ROOT" =~ ^(.*:)?${localenv_root}(:.*)?$ &&
-			"$CPATH" =~ ^(.*:)?${localenv_root}/include(:.*)?$ ]] && return $RET_OK
+		# Also check CPATH, as I don't expect a user to set it for a pkgix root.
+		[[ "$PKGIX_ROOT" =~ ^(.*:)?${pkgix_root}(:.*)?$ &&
+			"$CPATH" =~ ^(.*:)?${pkgix_root}/include(:.*)?$ ]] && return $RET_OK
 
-		export LOCALPKGENV_ROOT="$LOCALPKGENV_ROOT:${localenv_root}"
+		export PKGIX_ROOT="$PKGIX_ROOT:${pkgix_root}"
 	fi
 
-	verbose_printf "Exporting environment: $localenv_root\n"
+	verbose_printf "Exporting environment: $pkgix_root\n"
 
 	# Prepending to PATH
-	export PATH="${localenv_root}/bin:${PATH:-}"
-	export PATH="${localenv_root}/sbin:${PATH:-}"
+	export PATH="${pkgix_root}/bin:${PATH:-}"
+	export PATH="${pkgix_root}/sbin:${PATH:-}"
 
-	local library_path="${localenv_root}/lib"
+	local library_path="${pkgix_root}/lib"
 
 	# Don't necessarily want lib64/lib32 on the path, especially if the setup is pure,
 	# therefore check and only add them if they exist.
 	local libdir
 	for libdir in lib64 lib32; do
-		if [[ -d "${localenv_root}/${libdir}" ]]; then
-			library_path+=":${localenv_root}/${libdir}"
+		if [[ -d "${pkgix_root}/${libdir}" ]]; then
+			library_path+=":${pkgix_root}/${libdir}"
 		fi
 	done
 
 	# LD_LIBRARY_PATH is harmful, as it makes programs from the system use
-	# the libraries found in $localenv_root/lib, which is certainly not
+	# the libraries found in $pkgix_root/lib, which is certainly not
 	# considered stable.
 	# For more info: http://xahlee.info/UnixResource_dir/_/ldpath.html
 
@@ -375,35 +375,35 @@ export_env() {
 	fi
 
 	if [[ -z "${PKG_CONFIG_PATH:-}" ]]; then
-		export PKG_CONFIG_PATH="${localenv_root}/lib/pkgconfig"
+		export PKG_CONFIG_PATH="${pkgix_root}/lib/pkgconfig"
 	else
-		export PKG_CONFIG_PATH="${localenv_root}/lib/pkgconfig:$PKG_CONFIG_PATH"
+		export PKG_CONFIG_PATH="${pkgix_root}/lib/pkgconfig:$PKG_CONFIG_PATH"
 	fi
 
 	# C/C++ preprocessor search paths (-I)
 	if [[ -z "${CPATH:-}" ]]; then
-		export CPATH="${localenv_root}/include"
+		export CPATH="${pkgix_root}/include"
 	else
-		export CPATH="${localenv_root}/include:$CPATH"
+		export CPATH="${pkgix_root}/include:$CPATH"
 	fi
 
 	return $RET_OK
 }
 
 ##
-# cmd_showenv localenv_root...
+# cmd_showenv pkgix_root...
 #
 cmd_showenv() {
-	local localenv_root
-	for localenv_root in "$@"; do
-		export_env "$localenv_root" || :
+	local pkgix_root
+	for pkgix_root in "$@"; do
+		export_env "$pkgix_root" || :
 	done
 
 	# See export_env for why we are not exporting LD_LIBRARY_PATH
 
-	case "$LOCALPKGENV_SHELL" in
+	case "$PKGIX_SHELL" in
 		*csh)
-			[[ -n "${LOCALPKGENV_ROOT:-}" ]] && echo "setenv LOCALPKGENV_ROOT \"$LOCALPKGENV_ROOT\"" || :
+			[[ -n "${PKGIX_ROOT:-}" ]] && echo "setenv PKGIX_ROOT \"$PKGIX_ROOT\"" || :
 			[[ -n "${PATH:-}" ]] && echo "setenv PATH \"$PATH\"" || :
 			[[ -n "${LD_RUN_PATH:-}" ]] && echo "setenv LD_RUN_PATH \"$LD_RUN_PATH\"" || :
 			[[ -n "${LIBRARY_PATH:-}" ]] && echo "setenv LIBRARY_PATH \"$LIBRARY_PATH\"" || :
@@ -412,7 +412,7 @@ cmd_showenv() {
 			;;
 		*)
 			# Assume sh compatible shell (bash, zsh, ..)
-			[[ -n "${LOCALPKGENV_ROOT:-}" ]] && echo "export LOCALPKGENV_ROOT=\"$LOCALPKGENV_ROOT\"" || :
+			[[ -n "${PKGIX_ROOT:-}" ]] && echo "export PKGIX_ROOT=\"$PKGIX_ROOT\"" || :
 			[[ -n "${PATH:-}" ]] && echo "export PATH=\"$PATH\"" || :
 			[[ -n "${LD_RUN_PATH:-}" ]] && echo "export LD_RUN_PATH=\"$LD_RUN_PATH\"" || :
 			[[ -n "${LIBRARY_PATH:-}" ]] && echo "export LIBRARY_PATH=\"$LIBRARY_PATH\"" || :
@@ -461,7 +461,7 @@ source_pkg() {
 	# Don't set repo_url as local here, as it can then be used in the package
 	# description files to get information about its source repository, and 
 	# e.g., download extra files such as patches from the repo.
-	for repo_url in $LOCALPKGENV_REPO_URLS; do
+	for repo_url in $PKGIX_REPO_URLS; do
 		pkg_file="${repo_url}/$pkg_name"
 
 		case "$pkg_file" in
@@ -494,7 +494,7 @@ source_pkg() {
 }
 
 ##
-# sourced_pkg_call funcname [localenv_root [install_dir]]
+# sourced_pkg_call funcname [pkgix_root [install_dir]]
 # Wrap sourced function call execution.
 #
 # Disable 'nounset' for calling sourced functions, as the complexity of package
@@ -522,20 +522,20 @@ sourced_pkg_call() {
 }
 
 ##
-# pkg_install localenv_root pkg_name [reinstall]
+# pkg_install pkgix_root pkg_name [reinstall]
 #
 pkg_install() {
-	local localenv_root="$1"
+	local pkgix_root="$1"
 	local pkg_name="$2"
 	local reinstall="${3:-0}"
 	local is_reinstall=0
 
-	if [[ ! -d "$localenv_root" ]]; then
-		error_printf "'$localenv_root' is not a valid directory!\n"
+	if [[ ! -d "$pkgix_root" ]]; then
+		error_printf "'$pkgix_root' is not a valid directory!\n"
 		exit $EXIT_ERR
 	fi
 
-	local db_prefix="${localenv_root}/${INSTALLED_DB}/${pkg_name}"
+	local db_prefix="${pkgix_root}/${INSTALLED_DB}/${pkg_name}"
 
 	if [[ -f "${db_prefix}/version" ]]; then
 		if (( ! reinstall )); then
@@ -612,10 +612,10 @@ pkg_install() {
 
 		if (( ! is_reinstall )) && sourced_pkg_call isinstalled; then
 			if (( ! arg_force )); then
-				msg_printf "'$pkg_name' already available outside of '$localenv_root', skipping...\n"
+				msg_printf "'$pkg_name' already available outside of '$pkgix_root', skipping...\n"
 				exit $EXIT_OK
 			else
-				msg_printf "Forcing installation of '$pkg_name', despite already available outside of '$localenv_root'...\n"
+				msg_printf "Forcing installation of '$pkg_name', despite already available outside of '$pkgix_root'...\n"
 			fi
 		fi
 
@@ -632,7 +632,7 @@ pkg_install() {
 			msg_printf "${Cgrn}$pkg_name (${version:-})${Crst} resolving dependencies...\n"
 			local dep_name
 			for dep_name in "${depends[@]:+${depends[@]}}"; do
-				pkg_install "$localenv_root" "$dep_name"
+				pkg_install "$pkgix_root" "$dep_name"
 			done
 		else
 			warning_printf "Ignoring dependencies.\n"
@@ -640,8 +640,8 @@ pkg_install() {
 
 		msg_printf "${Cgrn}$pkg_name (${version:-})${Crst} building...\n"
 
-		local build_dir="${localenv_root}/.${PROGNAME}-build"
-		local install_dir="${localenv_root}/.${PROGNAME}-tmpinstall"
+		local build_dir="${pkgix_root}/.${PROGNAME}-build"
+		local install_dir="${pkgix_root}/.${PROGNAME}-tmpinstall"
 		mkdir -p "$build_dir"
 		mkdir -p "$install_dir"
 
@@ -654,14 +654,14 @@ pkg_install() {
 
 		trap "$trap_cmd" EXIT
 
-		if ! sourced_pkg_call build "$localenv_root" "$install_dir"; then
+		if ! sourced_pkg_call build "$pkgix_root" "$install_dir"; then
 			error_printf "Building '$pkg_name' failed! Aborting.\n"
 			exit $EXIT_ERR
 		fi
 
 		msg_printf "${Cgrn}$pkg_name (${version:-})${Crst} installing into staging area...\n"
 
-		if ! sourced_pkg_call installenv "$localenv_root" "$install_dir"; then
+		if ! sourced_pkg_call installenv "$pkgix_root" "$install_dir"; then
 			error_printf "Installation of '$pkg_name' failed! Aborting.\n"
 			exit $EXIT_ERR
 		fi
@@ -671,15 +671,15 @@ pkg_install() {
 			# a package depends on itself it is used rather than the system
 			# version (e.g., gcc, make).  If the system version should be used
 			# again: uninstall->install manually.
-			pkg_uninstall "$localenv_root" "$pkg_name"
+			pkg_uninstall "$pkgix_root" "$pkg_name"
 		fi
 
 		# Create the list of files to be installed
 		local staging_files_file="${build_dir}/.staging.files"
 		: > "$staging_files_file"
-		if [[ -d "${install_dir}/${localenv_root}" ]]; then
-			# As prefix is $localenv_root, the complete folder structure from / is maintained inside $install_dir
-			find_printbase "${install_dir}/${localenv_root}" > "$staging_files_file"
+		if [[ -d "${install_dir}/${pkgix_root}" ]]; then
+			# As prefix is $pkgix_root, the complete folder structure from / is maintained inside $install_dir
+			find_printbase "${install_dir}/${pkgix_root}" > "$staging_files_file"
 		else
 			warning_printf "Package did not install any files.\n"
 		fi
@@ -692,8 +692,8 @@ pkg_install() {
 		local backup_checksum_sha256
 		for backup_path in "${backup[@]:+${backup[@]}}"; do
 			# Only do checksum based backup with real files
-			if [[ -f "${install_dir}/${localenv_root}/${backup_path}" ]]; then
-				backup_checksum_sha256=($(sha256checksum "${install_dir}/${localenv_root}/${backup_path}"))
+			if [[ -f "${install_dir}/${pkgix_root}/${backup_path}" ]]; then
+				backup_checksum_sha256=($(sha256checksum "${install_dir}/${pkgix_root}/${backup_path}"))
 				backup_checksum_sha256="${backup_checksum_sha256[0]}"
 			else
 				backup_checksum_sha256=""
@@ -702,20 +702,20 @@ pkg_install() {
 			echo "${backup_path}:${backup_checksum_sha256}" >> "$backup_file"
 		done
 
-		# Check for file conflicts before copying from install_dir to localenv_root
+		# Check for file conflicts before copying from install_dir to pkgix_root
 		local pkgnew_files_file="${build_dir}/.pkgnew.files"
 		: > "$pkgnew_files_file"
 		if (( ! arg_force )); then
 			msg_printf "${Cgrn}$pkg_name (${version:-})${Crst} checking for file conflicts...\n"
 
 			while read path; do
-				if [[ ! -d "${localenv_root}/${path}" && -e "${localenv_root}/${path}" ]]; then
+				if [[ ! -d "${pkgix_root}/${path}" && -e "${pkgix_root}/${path}" ]]; then
 					in_list "$path" "${forceinstall[@]:+${forceinstall[@]}}" && continue || :
 
-					# Only if the file already exists in localenv_root and in
+					# Only if the file already exists in pkgix_root and in
 					# the backup list, should it be installed as a .pkgnew file.
 					if in_list "$path" "${backup[@]:+${backup[@]}}"; then
-						mv "${install_dir}/${localenv_root}/${path}" "${install_dir}/${localenv_root}/${path}.pkgnew"
+						mv "${install_dir}/${pkgix_root}/${path}" "${install_dir}/${pkgix_root}/${path}.pkgnew"
 						echo "${path}.pkgnew" >> "$pkgnew_files_file"
 						warning_printf "Installing '${path}' as '${path}.pkgnew'\n"
 						continue
@@ -742,8 +742,8 @@ pkg_install() {
 		mv "$backup_file" "${db_prefix}/files.backup"
 
 		# Perform actual installation
-		if [[ -d "${install_dir}/${localenv_root}" ]]; then
-			cp -a "${install_dir}/${localenv_root}"/* "${localenv_root}"
+		if [[ -d "${install_dir}/${pkgix_root}" ]]; then
+			cp -a "${install_dir}/${pkgix_root}"/* "${pkgix_root}"
 		fi
 
 		trap - EXIT
@@ -754,7 +754,7 @@ pkg_install() {
 		# Run postinstall if available
 		if type -p postinstall > /dev/null; then
 			msg_printf "${Cgrn}$pkg_name (${version:-})${Crst} post-install...\n"
-			if ! sourced_pkg_call postinstall "$localenv_root"; then
+			if ! sourced_pkg_call postinstall "$pkgix_root"; then
 				warning_printf "Post-installation step failed!\n"
 			fi
 		fi
@@ -777,7 +777,7 @@ pkg_install() {
 		# As the entries are not deleted upon uninstallation, over time, a dependence ordering
 		# is being built, so that if uninstalled packages are reinstalled, upgrading still
 		# works as before.
-		local db_file="${localenv_root}/${INSTALLED_DB}.db"
+		local db_file="${pkgix_root}/${INSTALLED_DB}.db"
 
 		if [[ -f "$db_file" ]] && grep -q "^.|${pkg_name}$" "$db_file"; then
 			sed -i "s:^.|${pkg_name}$:i|${pkg_name}:" "$db_file"
@@ -792,13 +792,13 @@ pkg_install() {
 }
 
 ##
-# pkg_uninstall localenv_root pkg_name
+# pkg_uninstall pkgix_root pkg_name
 #
 pkg_uninstall() {
-	local localenv_root="$1"
+	local pkgix_root="$1"
 	local pkg_name="$2"
 	local purge="${3:-0}"
-	local db_prefix="${localenv_root}/${INSTALLED_DB}/${pkg_name}"
+	local db_prefix="${pkgix_root}/${INSTALLED_DB}/${pkg_name}"
 	local files_file="${db_prefix}/files"
 	local backup_file="${db_prefix}/files.backup"
 	local version_file="${db_prefix}/version"
@@ -824,8 +824,8 @@ pkg_uninstall() {
 		backup_checksum_sha256="${backup_path##*:}"
 		backup_path="${backup_path%:*}"
 
-		if [[ -f "${localenv_root}/${backup_path}" ]]; then
-			backup_checksum_sha256_f=($(sha256checksum "${localenv_root}/${backup_path}"))
+		if [[ -f "${pkgix_root}/${backup_path}" ]]; then
+			backup_checksum_sha256_f=($(sha256checksum "${pkgix_root}/${backup_path}"))
 			backup_checksum_sha256_f="${backup_checksum_sha256_f[0]}"
 
 			# If file changed, exclude from deletion
@@ -840,8 +840,8 @@ pkg_uninstall() {
 	while read filename; do
 		# (1) First pass delete files and get directory depths
 
-		if [[ ! -d "${localenv_root}/$filename" ]]; then
-			rm -f "${localenv_root}/$filename"
+		if [[ ! -d "${pkgix_root}/$filename" ]]; then
+			rm -f "${pkgix_root}/$filename"
 		else
 			# Get path depth for sorting: If we don't do this, directories
 			# which are higher up in the hierarchy are being tried to be
@@ -856,7 +856,7 @@ pkg_uninstall() {
 	while read filename; do
 		# (2) Then check for empty directories and delete if empty
 		filename="${filename#*:}"
-		remove_empty_dirs "${localenv_root}/$filename" 0
+		remove_empty_dirs "${pkgix_root}/$filename" 0
 	done
 
 	# Remove meta files
@@ -866,24 +866,24 @@ pkg_uninstall() {
 	rm "$info_file"
 
 	# Clean up installed db
-	remove_empty_dirs "${localenv_root}/${INSTALLED_DB}"
+	remove_empty_dirs "${pkgix_root}/${INSTALLED_DB}"
 
 	# Set package as uninstalled
-	sed -i "s:^.|${pkg_name}$:u|${pkg_name}:" "${localenv_root}/${INSTALLED_DB}.db"
+	sed -i "s:^.|${pkg_name}$:u|${pkg_name}:" "${pkgix_root}/${INSTALLED_DB}.db"
 
 	msg_printf "${CgrnB}$pkg_name${Crst} successfully uninstalled.\n"
 }
 
 ##
-# cmd_install localenv_root pkg_name...
+# cmd_install pkgix_root pkg_name...
 #
 cmd_install() {
 	if [[ -z "${1:-}" ]]; then
-		error_printf "You need to specify a locakpkgenv root!\n"
+		error_printf "You need to specify a pkgix root!\n"
 		exit $EXIT_ERR
 	fi
 
-	local localenv_root="$1"
+	local pkgix_root="$1"
 	shift
 
 	if [[ -z "${1:-}" ]]; then
@@ -891,48 +891,48 @@ cmd_install() {
 		exit $EXIT_ERR
 	fi
 
-	if [[ ! -d "${localenv_root}" ]]; then
-		if ! mkdir -p "${localenv_root}" 2> /dev/null; then
-			error_printf "Could not create directory '$localenv_root'!\n"
+	if [[ ! -d "${pkgix_root}" ]]; then
+		if ! mkdir -p "${pkgix_root}" 2> /dev/null; then
+			error_printf "Could not create directory '$pkgix_root'!\n"
 			exit $EXIT_ERR
 		fi
 	fi
 
-	localenv_root="$(cd "$localenv_root" && pwd)"
-	export_env "$localenv_root"
+	pkgix_root="$(cd "$pkgix_root" && pwd)"
+	export_env "$pkgix_root"
 
-	msg_printf "Installing into $localenv_root: $*\n"
+	msg_printf "Installing into $pkgix_root: $*\n"
 
 	prompt_continue || exit $EXIT_USER_ABORT
 
 	local pkg_name
 	for pkg_name in "$@"; do
-		pkg_install "$localenv_root" "$pkg_name" "$arg_reinstall"
+		pkg_install "$pkgix_root" "$pkg_name" "$arg_reinstall"
 	done
 }
 
 ##
-# root_upgrade localenv_root
+# root_upgrade pkgix_root
 #
 root_upgrade() {
-	local localenv_root="$1"
+	local pkgix_root="$1"
 
-	if [[ ! -f "${localenv_root}/${INSTALLED_DB}.db" ]]; then
-		warning_printf "'$localenv_root' is not a valid $PROGNAME root!\n"
+	if [[ ! -f "${pkgix_root}/${INSTALLED_DB}.db" ]]; then
+		warning_printf "'$pkgix_root' is not a valid $PROGNAME root!\n"
 		return $RET_INVALID_OPTION
 	fi
 
-	localenv_root="$(cd "$localenv_root" && pwd)"
-	export_env "$localenv_root"
+	pkgix_root="$(cd "$pkgix_root" && pwd)"
+	export_env "$pkgix_root"
 
-	msg_printf "Upgrading $localenv_root ...\n"
+	msg_printf "Upgrading $pkgix_root ...\n"
 
 	prompt_continue || return $RET_USER_ABORT
 
-	grep "^i|" "${localenv_root}/${INSTALLED_DB}.db" |
+	grep "^i|" "${pkgix_root}/${INSTALLED_DB}.db" |
 	while read pkg_name; do
 		pkg_name="${pkg_name##i|}"
-		version_file="${localenv_root}/${INSTALLED_DB}/${pkg_name}/version"
+		version_file="${pkgix_root}/${INSTALLED_DB}/${pkg_name}/version"
 
 		if [[ ! -f "$version_file" ]]; then
 			warning_printf "Inconsistent database: no metadata for '$pkg_name'\n"
@@ -948,7 +948,7 @@ root_upgrade() {
 				msg_printf "${Cylw}Upgrading${Crst} $pkg_name ($installed_version -> ${version:-})"
 				(( ! arg_reinstall )) && printf "\n" || printf " - reinstall\n"
 
-				pkg_install "$localenv_root" "$pkg_name" 1
+				pkg_install "$pkgix_root" "$pkg_name" 1
 			else
 				msg_printf "$pkg_name ($installed_version) is up to date\n"
 			fi
@@ -959,20 +959,20 @@ root_upgrade() {
 }
 
 ##
-# cmd_upgrade localenv_root...
+# cmd_upgrade pkgix_root...
 #
 cmd_upgrade() {
 	if [[ -z "${1:-}" ]]; then
-		error_printf "You need to specify at least one locakpkgenv root!\n"
+		error_printf "You need to specify at least one pkgix root!\n"
 		exit $EXIT_ERR
 	fi
 
-	local localenv_root
+	local pkgix_root
 	local ret_code
-	for localenv_root in "$@"; do
+	for pkgix_root in "$@"; do
 		# Run nested, not to pollute subsequent upgrades with export_env
 		# The environment should be set accordingly prior to upgrading!
-		( root_upgrade "$localenv_root" ) && ret_code=$? || ret_code=$?
+		( root_upgrade "$pkgix_root" ) && ret_code=$? || ret_code=$?
 		if (( ret_code != RET_OK && ret_code != RET_INVALID_OPTION && ret_code != RET_USER_ABORT )); then
 			exit $EXIT_ERR
 		fi
@@ -980,25 +980,25 @@ cmd_upgrade() {
 }
 
 ##
-# cmd_uninstall localenv_root pkg_name...
+# cmd_uninstall pkgix_root pkg_name...
 #
 cmd_uninstall() {
-	local localenv_root="${1:-}"
+	local pkgix_root="${1:-}"
 	shift || { error_printf "No targets specified!\n"; exit $EXIT_ERR; }
 
-	if [[ ! -d "$localenv_root" ]]; then
-		error_printf "'$localenv_root' is not a valid directory!\n"
+	if [[ ! -d "$pkgix_root" ]]; then
+		error_printf "'$pkgix_root' is not a valid directory!\n"
 		exit $EXIT_ERR
 	fi
 
-	localenv_root="$(cd "$localenv_root" && pwd)"
+	pkgix_root="$(cd "$pkgix_root" && pwd)"
 
-	msg_printf "Uninstalling from $localenv_root: $*\n"
+	msg_printf "Uninstalling from $pkgix_root: $*\n"
 	prompt_continue || exit $EXIT_USER_ABORT
 	
 	local pkg_name
 	for pkg_name in "$@"; do
-		pkg_uninstall "$localenv_root" "$pkg_name" "$arg_purge"
+		pkg_uninstall "$pkgix_root" "$pkg_name" "$arg_purge"
 	done
 }
 
@@ -1009,7 +1009,7 @@ cmd_avail() {
 	local o_IFS="$IFS" ; IFS="$URL_SEP"
 
 	local repo_url
-	for repo_url in $LOCALPKGENV_REPO_URLS; do
+	for repo_url in $PKGIX_REPO_URLS; do
 		printf "${CbluB}-> ${CgrnB}${repo_url}${Crst}\n"
 		case "$repo_url" in
 			http://*|https://*|ftp://*)
@@ -1036,21 +1036,21 @@ cmd_avail() {
 }
 
 ##
-# cmd_list localenv_root...
+# cmd_list pkgix_root...
 #
 cmd_list() {
-	local localenv_root
-	for localenv_root in "$@"; do
-		if [[ -d "$localenv_root" ]]; then
-			localenv_root="$(cd "$localenv_root" && pwd)"
-			printf "${CgrnB}${localenv_root}${Crst}\n" 1>&2
+	local pkgix_root
+	for pkgix_root in "$@"; do
+		if [[ -d "$pkgix_root" ]]; then
+			pkgix_root="$(cd "$pkgix_root" && pwd)"
+			printf "${CgrnB}${pkgix_root}${Crst}\n" 1>&2
 
-			if [[ -d "${localenv_root}/${INSTALLED_DB}" ]]; then
-				find "${localenv_root}/${INSTALLED_DB}" -type f -name "version" | sort |
+			if [[ -d "${pkgix_root}/${INSTALLED_DB}" ]]; then
+				find "${pkgix_root}/${INSTALLED_DB}" -type f -name "version" | sort |
 				while read version_file; do
-					pkg_name="${version_file##${localenv_root}/${INSTALLED_DB}/}"
+					pkg_name="${version_file##${pkgix_root}/${INSTALLED_DB}/}"
 					pkg_name="${pkg_name%%/version}"
-					info_file="${localenv_root}/${INSTALLED_DB}/${pkg_name}/info"
+					info_file="${pkgix_root}/${INSTALLED_DB}/${pkg_name}/info"
 					(
 						source "$info_file"
 						printf "%-42s %-18s %s\n" "${pkg_name}" "$(<$version_file)" "${description:-}"
@@ -1062,35 +1062,35 @@ cmd_list() {
 }
 
 ##
-# cmd_show localenv_root pkg_name...
+# cmd_show pkgix_root pkg_name...
 #
 cmd_show() {
-	local localenv_roots=()
+	local pkgix_roots=()
 
 	if [[ "$*" =~ " -- " ]]; then
 		while [[ "$1" != "--" ]]; do
-			localenv_roots+=("$1")
+			pkgix_roots+=("$1")
 			shift || break
 		done
 	else
-		localenv_roots+=("${1:-}")
+		pkgix_roots+=("${1:-}")
 	fi
 
 	shift || { error_printf "No targets specified!\n"; exit $EXIT_ERR; }
 
 	local pkg_name
-	local localenv_root
+	local pkgix_root
 	local db_prefix
 	local version_file
 	local info_file
 	for pkg_name in "$@"; do
-		for localenv_root in "${localenv_roots[@]}"; do
-			if [[ ! -d "$localenv_root" ]]; then
-				error_printf "'$localenv_root' is not a valid directory!\n"
+		for pkgix_root in "${pkgix_roots[@]}"; do
+			if [[ ! -d "$pkgix_root" ]]; then
+				error_printf "'$pkgix_root' is not a valid directory!\n"
 				exit $EXIT_ERR
 			fi
 
-			db_prefix="${localenv_root}/${INSTALLED_DB}/${pkg_name}"
+			db_prefix="${pkgix_root}/${INSTALLED_DB}/${pkg_name}"
 			version_file="${db_prefix}/version"
 			info_file="${db_prefix}/info"
 
@@ -1124,30 +1124,30 @@ cmd_show() {
 }
 
 ##
-# cmd_chenv localenv_root...
+# cmd_chenv pkgix_root...
 #
 cmd_chenv() {
-	local localenv_root
-	for localenv_root in "$@"; do
-		export_env "$localenv_root"
+	local pkgix_root
+	for pkgix_root in "$@"; do
+		export_env "$pkgix_root"
 	done
 
 	msg_printf "Spawning shell\n"
-	exec "$LOCALPKGENV_SHELL"
+	exec "$PKGIX_SHELL"
 }
 
 sanitize_repo_urls() {
-	local old_repo_urls="$LOCALPKGENV_REPO_URLS"
+	local old_repo_urls="$PKGIX_REPO_URLS"
 	local o_IFS="$IFS" ; IFS="$URL_SEP"
 
-	LOCALPKGENV_REPO_URLS=""
+	PKGIX_REPO_URLS=""
 
 	local url
 	for url in $old_repo_urls; do
 		[[ "$url" =~ ^file:// ]] && url="${url##file://}"
 		url=${url%%/}
 
-		LOCALPKGENV_REPO_URLS+="${url};"
+		PKGIX_REPO_URLS+="${url};"
 	done
 
 	IFS="$o_IFS"
@@ -1155,17 +1155,17 @@ sanitize_repo_urls() {
 
 prog_usage() {
 	echo "Usage: $PROGNAME [-r|--repo-urls] [-n|--noconfirm] [-v|--verbose] [--debug]"
-	echo "                   <command> [<args>]"
+	echo "             <command> [<args>]"
 	echo
 	echo "Commands available:"
-	echo "    install    Install a package in a local environment"
-	echo "    upgrade    Upgrade a local environment"
+	echo "    install    Install a package in a prefix environment"
+	echo "    upgrade    Upgrade a prefix environment"
 	echo "    uninstall  Uninstall an installed package"
 	echo "    avail      List packages available to install"
 	echo "    list       List installed packages"
 	echo "    show       Show information about installed packages"
-	echo "    showenv    Show local environment parameters"
-	echo "    chenv      Switch to a local environment"
+	echo "    showenv    Show prefix environment parameters"
+	echo "    chenv      Switch to a prefix environment"
 	echo
 	echo "Options:"
 	echo "   -r, --repo-urls"
@@ -1227,7 +1227,7 @@ while :; do
 		-r|--repo-urls)
 			[[ -z "${2:-}" ]] && { prog_usage; exit $EXIT_INVALID_OPTION; }
 
-			LOCALPKGENV_REPO_URLS="${2}${URL_SEP}${LOCALPKGENV_REPO_URLS}"
+			PKGIX_REPO_URLS="${2}${URL_SEP}${PKGIX_REPO_URLS}"
 			shift
 			;;
 		-v|--verbose) arg_verbose=1 ;;
@@ -1278,21 +1278,21 @@ case "$cmd" in
 
 		;;&
 	install|uninstall)
-		if [[ -z "${LOCALPKGENV_ROOT:-}" ]]; then
+		if [[ -z "${PKGIX_ROOT:-}" ]]; then
 			cmd_$cmd "$@"
 		else
 			# Commands which can only accept one root, pass first one only
 			# Remove leading ':'
-			args_root="${LOCALPKGENV_ROOT##:}"
+			args_root="${PKGIX_ROOT##:}"
 			cmd_$cmd "${args_root%%:*}" "$@"
 		fi
 		;;
 	upgrade|list|show|showenv|chenv)
-		if [[ -z "${LOCALPKGENV_ROOT:-}" ]]; then
+		if [[ -z "${PKGIX_ROOT:-}" ]]; then
 			cmd_$cmd "$@"
 		else
 			o_IFS="$IFS" ; IFS=":"
-			args_root=(${LOCALPKGENV_ROOT[@]})
+			args_root=(${PKGIX_ROOT[@]})
 			IFS="$o_IFS" ; unset o_IFS
 
 			case "$cmd" in
@@ -1308,19 +1308,19 @@ case "$cmd" in
 		case "${1:-}" in
 			install|upgrade)
 				echo "Usage: $PROGNAME $1 [-f|--force] [-d|--nodeps] [-r|--reinstall]"
-				echo "                   [-k|--keep-build-dir] [--ignore-checksums]"
+				echo "                     [-k|--keep-build-dir] [--ignore-checksums]"
 
 				if [[ "$1" == "install" ]]; then
-					echo "                   <localenv-dir> <pkgs>..."
+					echo "                     <pkgix-dir> <pkgs>..."
 				else
-					echo "                   <localenv-dirs>..."
+					echo "                     <pkgix-dirs>..."
 				fi
 
 				echo
 				echo "Options:"
 				echo "    -f, --force"
 				echo "        Force installation of programs that are: already available outside of"
-				echo "        <localenv-dir>; satisfied metapackages; incompatible with the current system;"
+				echo "        <pkgix-dir>; satisfied metapackages; incompatible with the current system;"
 				echo "        conflicting with already installed files."
 				echo "        Also forces overwriting files which were normally preserved (see backup)."
 				echo "    -d, --nodeps"

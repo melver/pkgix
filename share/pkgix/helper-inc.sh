@@ -1,5 +1,5 @@
 #
-# share/localpkgenv/helper-inc.sh: Localpkgenv shell helper. Can be sourced
+# share/pkgix/helper-inc.sh: pkgix shell helper. Can be sourced
 #      by supported shells to active optional functionality.
 #
 # Supported (tested with): bash, zsh
@@ -20,20 +20,20 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-# Easier to detect shell when sourced, rather than by locakpkgenv itself.
-if [[ -z "$LOCALPKGENV_SHELL" ]]; then
-	[[ -n "$BASH" ]] && export LOCALPKGENV_SHELL="$BASH"
-	[[ -n "$ZSH_VERSION" ]] && export LOCALPKGENV_SHELL="$(which zsh)"
+# Easier to detect shell when sourced, rather than by pkgix itself.
+if [[ -z "$PKGIX_SHELL" ]]; then
+	[[ -n "$BASH" ]] && export PKGIX_SHELL="$BASH"
+	[[ -n "$ZSH_VERSION" ]] && export PKGIX_SHELL="$(which zsh)"
 fi
 
-localpkgenv-activate() {
-	if [[ -n "$LOCALPKGENV_ROOT" ]]; then
-		echo "You need to deactivate your current local environment with 'localpkgenv-deactivate' first."
+pkgix-activate() {
+	if [[ -n "$PKGIX_ROOT" ]]; then
+		echo "You need to deactivate your current prefix environment with 'pkgix-deactivate' first."
 		return 1
 	fi
 
 	if [[ "$#" == "0" ]]; then
-		echo "Need at least one localpkgenv root!"
+		echo "Need at least one pkgix root!"
 		return 1
 	fi
 
@@ -42,14 +42,14 @@ localpkgenv-activate() {
 	_OLD_LIBRARY_PATH="$LIBRARY_PATH"
 	_OLD_PKG_CONFIG_PATH="$PKG_CONFIG_PATH"
 	_OLD_CPATH="$CPATH"
-	eval "$(localpkgenv showenv "$@")"
+	eval "$(pkgix showenv "$@")"
 
 	_OLD_PS1="$PS1"
 	PS1=$'\e[1;35m<+>\e[0m'"$PS1"
 }
 
-localpkgenv-deactivate() {
-	unset LOCALPKGENV_ROOT
+pkgix-deactivate() {
+	unset PKGIX_ROOT
 
 	export PATH="$_OLD_PATH"
 	export LD_RUN_PATH="$_OLD_LD_RUN_PATH"
