@@ -117,6 +117,20 @@ else
 fi
 
 ##
+# in_list needle hay...
+in_list() {
+	local needle="$1"
+	shift
+
+	local elem
+	for elem in "$@"; do
+		[[ "$elem" == "$needle" ]] && return $RET_OK || :
+	done
+
+	return $RET_ERR
+}
+
+##
 # printf wrappers
 #
 msg_printf() {
@@ -381,7 +395,7 @@ export_env() {
 cmd_showenv() {
 	local localenv_root
 	for localenv_root in "$@"; do
-		export_env "$localenv_root"
+		export_env "$localenv_root" || :
 	done
 
 	# See export_env for why we are not exporting LD_LIBRARY_PATH
@@ -548,6 +562,7 @@ pkg_install() {
 		unset build
 		unset installenv
 		unset postinstall
+		unset forceinstall
 
 		# Source package description file and try to traverse until a non-meta
 		# package description is found.
@@ -662,6 +677,8 @@ pkg_install() {
 			msg_printf "${Cgrn}$pkg_name (${version:-})${Crst} checking for file conflicts...\n"
 			find_printbase "${install_dir}/${localenv_root}" ! -type d |
 			while read path; do
+				in_list "$path" "${forceinstall[@]:+${forceinstall[@]}}" && continue || :
+
 				if [[ -e "${localenv_root}/${path}" ]]; then
 					error_printf "Conflict detected: ${path}\n"
 					exit $EXIT_ERR
