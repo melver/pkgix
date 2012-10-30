@@ -146,7 +146,7 @@ error_printf() {
 }
 
 warning_printf() {
-	msg_printf "${Cred}WARNING:${Crst} ""$@"
+	msg_printf "${Cylw}WARNING:${Crst} ""$@"
 }
 
 ##
@@ -245,7 +245,8 @@ fetch() {
 		fi
 	fi
 
-	local file_checksum_sha256=($(sha256checksum "$file_name"))
+	local file_checksum_sha256
+	file_checksum_sha256=($(sha256checksum "$file_name"))
 	file_checksum_sha256="${file_checksum_sha256[0]}"
 
 	if [[ -n "$checksum_sha256" ]]; then
@@ -563,6 +564,7 @@ pkg_install() {
 		unset installenv
 		unset postinstall
 		unset forceinstall
+		unset backup
 
 		# Source package description file and try to traverse until a non-meta
 		# package description is found.
@@ -672,18 +674,57 @@ pkg_install() {
 			pkg_uninstall "$localenv_root" "$pkg_name"
 		fi
 
+		# Create the list of files to be installed
+		local staging_files_file="${build_dir}/.staging.files"
+		: > "$staging_files_file"
+		if [[ -d "${install_dir}/${localenv_root}" ]]; then
+			# As prefix is $localenv_root, the complete folder structure from / is maintained inside $install_dir
+			find_printbase "${install_dir}/${localenv_root}" > "$staging_files_file"
+		else
+			warning_printf "Package did not install any files.\n"
+		fi
+
+		# Require files.backup file; can be empty.
+		# Perform this step before moving files to .pkgnew!
+		local backup_file="${build_dir}/.staging.files.backup"
+		: > "$backup_file"
+		local backup_path
+		local backup_checksum_sha256
+		for backup_path in "${backup[@]:+${backup[@]}}"; do
+			# Only do checksum based backup with real files
+			if [[ -f "${install_dir}/${localenv_root}/${backup_path}" ]]; then
+				backup_checksum_sha256=($(sha256checksum "${install_dir}/${localenv_root}/${backup_path}"))
+				backup_checksum_sha256="${backup_checksum_sha256[0]}"
+			else
+				backup_checksum_sha256=""
+			fi
+
+			echo "${backup_path}:${backup_checksum_sha256}" >> "$backup_file"
+		done
+
 		# Check for file conflicts before copying from install_dir to localenv_root
+		local pkgnew_files_file="${build_dir}/.pkgnew.files"
+		: > "$pkgnew_files_file"
 		if (( ! arg_force )); then
 			msg_printf "${Cgrn}$pkg_name (${version:-})${Crst} checking for file conflicts...\n"
-			find_printbase "${install_dir}/${localenv_root}" ! -type d |
-			while read path; do
-				in_list "$path" "${forceinstall[@]:+${forceinstall[@]}}" && continue || :
 
-				if [[ -e "${localenv_root}/${path}" ]]; then
+			while read path; do
+				if [[ ! -d "${localenv_root}/${path}" && -e "${localenv_root}/${path}" ]]; then
+					in_list "$path" "${forceinstall[@]:+${forceinstall[@]}}" && continue || :
+
+					# Only if the file already exists in localenv_root and in
+					# the backup list, should it be installed as a .pkgnew file.
+					if in_list "$path" "${backup[@]:+${backup[@]}}"; then
+						mv "${install_dir}/${localenv_root}/${path}" "${install_dir}/${localenv_root}/${path}.pkgnew"
+						echo "${path}.pkgnew" >> "$pkgnew_files_file"
+						warning_printf "Installing '${path}' as '${path}.pkgnew'\n"
+						continue
+					fi
+
 					error_printf "Conflict detected: ${path}\n"
 					exit $EXIT_ERR
 				fi
-			done || exit $?
+			done < "$staging_files_file"
 		else
 			warning_printf "Skipping file conflict check.\n"
 		fi
@@ -693,13 +734,16 @@ pkg_install() {
 		# Create installed database folders
 		mkdir -p "${db_prefix}"
 
+		# Use previously created list of files and pkgnew files
+		cat "$staging_files_file" "$pkgnew_files_file" > "${db_prefix}/files"
+		rm "$staging_files_file" "$pkgnew_files_file"
+
+		# Use previously created list of backup files
+		mv "$backup_file" "${db_prefix}/files.backup"
+
+		# Perform actual installation
 		if [[ -d "${install_dir}/${localenv_root}" ]]; then
-			# As prefix is $localenv_root, the complete folder structure from / is maintained inside $install_dir
-			find_printbase "${install_dir}/${localenv_root}" > "${db_prefix}/files"
 			cp -a "${install_dir}/${localenv_root}"/* "${localenv_root}"
-		else
-			warning_printf "Package did not install any files.\n"
-			: > "${db_prefix}/files"
 		fi
 
 		trap - EXIT
@@ -753,8 +797,10 @@ pkg_install() {
 pkg_uninstall() {
 	local localenv_root="$1"
 	local pkg_name="$2"
+	local purge="${3:-0}"
 	local db_prefix="${localenv_root}/${INSTALLED_DB}/${pkg_name}"
 	local files_file="${db_prefix}/files"
+	local backup_file="${db_prefix}/files.backup"
 	local version_file="${db_prefix}/version"
 	local info_file="${db_prefix}/info"
 
@@ -763,8 +809,34 @@ pkg_uninstall() {
 		exit $EXIT_ERR
 	fi
 
+	# Create an empty files.backup file if it does not exist [backwards compatibility].
+	if (( purge )) || [[ ! -f "$backup_file" ]]; then
+		: > "$backup_file"
+	fi
+
 	msg_printf "${Cgrn}$pkg_name ($(<"$version_file"))${Crst} uninstalling...\n"
 
+	local backup_path
+	local backup_checksum_sha256
+	local backup_checksum_sha256_f
+	while read backup_path; do
+		# (0) Check for changed files which require backup
+		backup_checksum_sha256="${backup_path##*:}"
+		backup_path="${backup_path%:*}"
+
+		if [[ -f "${localenv_root}/${backup_path}" ]]; then
+			backup_checksum_sha256_f=($(sha256checksum "${localenv_root}/${backup_path}"))
+			backup_checksum_sha256_f="${backup_checksum_sha256_f[0]}"
+
+			# If file changed, exclude from deletion
+			if [[ "$backup_checksum_sha256" != "$backup_checksum_sha256_f" ]]; then
+				echo "^${backup_path}$"
+			fi
+		else
+			# Exclude by default
+			echo "^${backup_path}$"
+		fi
+	done < "$backup_file" | grep -v -f - "$files_file" |
 	while read filename; do
 		# (1) First pass delete files and get directory depths
 
@@ -780,7 +852,7 @@ pkg_uninstall() {
 			local tmp=(${filename[@]}) ; IFS="$o_IFS"
 			printf "${#tmp[@]}:${filename}\n"
 		fi
-	done < "$files_file" | sort -rn |
+	done | sort -rn |
 	while read filename; do
 		# (2) Then check for empty directories and delete if empty
 		filename="${filename#*:}"
@@ -789,6 +861,7 @@ pkg_uninstall() {
 
 	# Remove meta files
 	rm "$files_file"
+	rm "$backup_file"
 	rm "$version_file"
 	rm "$info_file"
 
@@ -925,7 +998,7 @@ cmd_uninstall() {
 	
 	local pkg_name
 	for pkg_name in "$@"; do
-		pkg_uninstall "$localenv_root" "$pkg_name"
+		pkg_uninstall "$localenv_root" "$pkg_name" "$arg_purge"
 	done
 }
 
@@ -1192,6 +1265,18 @@ case "$cmd" in
 		done
 
 		;;& # Evaluate next statements!
+	uninstall)
+		arg_purge=0
+
+		while :; do
+			case "${1:-}" in
+				-P|--purge) arg_purge=1 ;;
+				*) break ;;
+			esac
+			shift
+		done
+
+		;;&
 	install|uninstall)
 		if [[ -z "${LOCALPKGENV_ROOT:-}" ]]; then
 			cmd_$cmd "$@"
@@ -1237,6 +1322,7 @@ case "$cmd" in
 				echo "        Force installation of programs that are: already available outside of"
 				echo "        <localenv-dir>; satisfied metapackages; incompatible with the current system;"
 				echo "        conflicting with already installed files."
+				echo "        Also forces overwriting files which were normally preserved (see backup)."
 				echo "    -d, --nodeps"
 				echo "        Ignore dependenciy check and do not install dependencies."
 				echo "    -r, --reinstall"
@@ -1247,7 +1333,14 @@ case "$cmd" in
 				echo "    --ignore-checksums"
 				echo "        Ignores checksums for remotely fetched files."
 				;;
-			uninstall|avail|list|show|showenv|chenv|help)
+			uninstall)
+				echo "Usage: $PROGNAME $1 [-P|--purge]"
+				echo
+				echo "Options:"
+				echo "    -P, --purge"
+				echo "        Force uninstallation of all installed files, even those marked for backup."
+				;;
+			avail|list|show|showenv|chenv|help)
 				echo "No further information available."
 				;;
 			*)
