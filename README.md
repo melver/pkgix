@@ -1,32 +1,29 @@
 # pkgix
 
-Allows to set up prefix environments and install packages inside
-them.
+Set up prefix environments and install packages inside them.
 
-pkgix is a very lightweight package manager, with primary use case to
-setup software in environments where installing the software system-wide (root
-access required) is not possible or not desirable.
+pkgix is a very lightweight package manager, intended to setup software in
+environments where root access is not available or installing the software
+system-wide is not desirable.
 
 Package description files can be located inside repositories accessible via
 multiple URLs. The following protocols are supported: file:// (default),
-http://.
+http://, https://, ftp://.
 
-Written in BASH for compatibility, making it possible to bootstrap an
-environment without too many other requirements.
+Written in BASH making use of standard POSIX tools.
 
 ## Examples
 
 ```
-# Install older versions of gcc and make into 'old-build-tools'
+# Install gcc 4.4 and make 3.80 into 'old-build-tools' from repository.
 $ pkgix install old-build-tools dev/gcc-4.4 dev/make-3.80
 
-# Starts a new shell with environment set to use the programs installed inside
-# the specified environment directory
+# Starts a new shell in the chosen prefix environment.
 $ pkgix chenv old-build-tools
 
-# Add a remote package description repository. Additional URLs are processed in
+# Add a remote repository. Additional URLs are processed in
 # order, until the requested package description file is found.
-$ pkgix -p https://raw.github.com/melver/pkgix/master/pkg install oldgcc dev/gcc-4.4
+$ pkgix -p https://raw.github.com/melver/pkgix/master/pkg install some-prefix dev/gcc-4.4
 ```
 
 ## Repositories
@@ -37,4 +34,8 @@ example of how to write package description files.
 List of known repository URLs:
 
 1. [pkgix-repo](https://github.com/melver/pkgix-repo): https://raw.github.com/melver/pkgix-repo/master/pkgs
+
+## Author
+
+Marco Elver <me AT marcoelver.com>
 
