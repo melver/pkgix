@@ -12,6 +12,22 @@ http://, https://, ftp://.
 
 Written in BASH making use of standard POSIX tools.
 
+## Setup
+
+It is possible to run `pkgix` directly, if you provide a valid repository.
+
+By default pkgix looks for a repository in `~/pkgix-repo/pkgs`. Repositories
+can be specified using the `-r` flag, but it is recommended to export the
+repository URL/path with `PKGIX_REPO_URLS=<repo-urls...>` (separated by `:`).
+See the Repositories section below for list of known repositories.
+
+#### Recommended:
+
+- Add `<path-to-pkgix>/bin` to your PATH.
+- `source <path-to-pkgix>/share/pkgix/helper-inc.sh`; currently supported: bash, zsh.
+Provides the `pkgix-activate` and `pkgix-deactivate` functions; annotates
+shell prompt to indicate active prefix environment.
+
 ## Examples
 
 ```
@@ -28,14 +44,11 @@ $ pkgix -p https://raw.github.com/melver/pkgix/master/pkg install some-prefix de
 
 ## Repositories
 
-The provided repo/ directory found with pkgix should only serve as an
-example of how to write package description files.
-
 List of known repository URLs:
 
 1. [pkgix-repo](https://github.com/melver/pkgix-repo): https://raw.github.com/melver/pkgix-repo/master/pkgs
 
 ## Author
 
-Marco Elver <me AT marcoelver.com>
+Marco Elver `<me AT marcoelver.com>`
 
