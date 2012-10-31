@@ -30,6 +30,7 @@ PROG_VERSION="0.1.3"
 PROGNAME="pkgix"
 DB_PREFIX="var/lib/${PROGNAME}/local"
 LOG_FILE="var/log/${PROGNAME}.log"
+LOCK_FILE="var/lock/${PROGNAME}.lock"
 URL_SEP=";"
 METAPKG_DUMMY="_dummy"
 readonly PROG_VERSION PROGNAME DB_PREFIX LOG_FILE URL_SEP METAPKG_DUMMY
@@ -206,6 +207,36 @@ case "$OSTYPE" in
 		}
 		;;
 esac
+
+##
+# lock_prefix pkgix_root
+# Checks for existing lock, creates a lock file in pkgix_root if not locked.
+#
+# Should not call from subshells!
+#
+lock_prefix() {
+	local pkgix_root="$(cd "$1" && pwd)"
+	local lock_file="${pkgix_root}/${LOCK_FILE}"
+	if [[ -f "$lock_file" ]]; then
+		error_printf "$lock_file exists!\n"
+		return $RET_ERR
+	fi
+
+	[[ ! -d "${lock_file%/*}" ]] && mkdir -p "${lock_file%/*}" || :
+	: > "$lock_file"
+	trap "unlock_prefix '${pkgix_root}'" EXIT
+	return $RET_OK
+}
+
+##
+# unlock_prefix pkgix_root
+#
+unlock_prefix() {
+	local pkgix_root="$(cd "$1" && pwd)"
+	local lock_file="${pkgix_root}/${LOCK_FILE}"
+	rm "$lock_file"
+	trap - EXIT
+}
 
 ##
 # extract_archive path_to_archive
@@ -682,7 +713,8 @@ pkg_install() {
 
 		pushd "$build_dir" &> /dev/null
 
-		# Setup cleanup trap
+		# Setup cleanup trap, as this is executed in subshell, it does not
+		# affect the parent shell's trap which will be executed normally on exit.
 		local trap_cmd="{ popd &> /dev/null; rm -rf \"$install_dir\";"
 		(( ! arg_keep_build_dir )) && trap_cmd+=" rm -rf \"$build_dir\";"
 		trap_cmd+=" }"
@@ -940,6 +972,8 @@ cmd_install() {
 	pkgix_root="$(cd "$pkgix_root" && pwd)"
 	export_env "$pkgix_root"
 
+	lock_prefix "$pkgix_root" || exit $EXIT_ERR
+
 	msg_printf "Installing into $pkgix_root: $*\n"
 
 	prompt_continue || exit $EXIT_USER_ABORT
@@ -948,6 +982,8 @@ cmd_install() {
 	for pkg_name in "$@"; do
 		pkg_install "$pkgix_root" "$pkg_name" "$arg_reinstall"
 	done
+
+	unlock_prefix "$pkgix_root"
 }
 
 ##
@@ -1010,12 +1046,16 @@ cmd_upgrade() {
 	local pkgix_root
 	local ret_code
 	for pkgix_root in "$@"; do
+		lock_prefix "$pkgix_root" || exit $EXIT_ERR
+
 		# Run nested, not to pollute subsequent upgrades with export_env
 		# The environment should be set accordingly prior to upgrading!
 		( root_upgrade "$pkgix_root" ) && ret_code=$? || ret_code=$?
 		if (( ret_code != RET_OK && ret_code != RET_INVALID_OPTION && ret_code != RET_USER_ABORT )); then
 			exit $EXIT_ERR
 		fi
+
+		unlock_prefix "$pkgix_root"
 	done
 }
 
@@ -1033,6 +1073,8 @@ cmd_remove() {
 
 	pkgix_root="$(cd "$pkgix_root" && pwd)"
 
+	lock_prefix "$pkgix_root" || exit $EXIT_ERR
+
 	msg_printf "Removing from $pkgix_root: $*\n"
 	prompt_continue || exit $EXIT_USER_ABORT
 	
@@ -1040,6 +1082,8 @@ cmd_remove() {
 	for pkg_name in "$@"; do
 		pkg_remove "$pkgix_root" "$pkg_name" "$arg_purge"
 	done
+
+	unlock_prefix "$pkgix_root"
 }
 
 ##
