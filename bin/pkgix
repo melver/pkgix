@@ -29,9 +29,10 @@ set -o nounset
 PROG_VERSION="0.1.3"
 PROGNAME="pkgix"
 INSTALLED_DB="var/lib/${PROGNAME}/installed"
+LOG_FILE="var/log/${PROGNAME}.log"
 URL_SEP=";"
 METAPKG_DUMMY="_dummy"
-readonly PROG_VERSION PROGNAME INSTALLED_DB URL_SEP METAPKG_DUMMY
+readonly PROG_VERSION PROGNAME INSTALLED_DB LOG_FILE URL_SEP METAPKG_DUMMY
 
 ##
 # Exit codes
@@ -68,8 +69,8 @@ readonly RET_OK RET_ERR RET_INVALID_OPTION RET_USER_ABORT
 ##
 # Color config
 #
-# Check if color is enabled and we have stderr on terminal
-if [[ "$PKGIX_COLOR" != "0" && -t 2 ]]; then
+# Check if color is enabled and we have stderr/in on terminal
+if [[ "$PKGIX_COLOR" != "0" && -t 2 && -t 1 ]]; then
 	# Check if we have tput
 	if type -p tput > /dev/null; then
 		Crst="$(tput sgr0)"
@@ -118,6 +119,16 @@ else
 	CpurB=
 	CcynB=
 fi
+
+##
+# log_printf pkgix_root args...
+#
+log_printf() {
+	local log_file="${1}/${LOG_FILE}"
+	shift
+	[[ ! -d "${log_file%/*}" ]] && mkdir -p "${log_file%/*}" || :
+	printf "[$(date)] ""$@" >> "$log_file"
+}
 
 ##
 # printf wrappers
@@ -691,11 +702,11 @@ pkg_install() {
 		fi
 
 		if (( is_reinstall )); then
-			# Uninstall after build/installenv, so that if building/installing
+			# Remove after build/installenv, so that if building/installing
 			# a package depends on itself it is used rather than the system
 			# version (e.g., gcc, make).  If the system version should be used
-			# again: uninstall->install manually.
-			pkg_uninstall "$pkgix_root" "$pkg_name"
+			# again: remove->install manually.
+			pkg_remove "$pkgix_root" "$pkg_name"
 		fi
 
 		# Create the list of files to be installed
@@ -798,8 +809,8 @@ pkg_install() {
 		[[ -z "${website:-}" ]] && warning_printf "Empty 'website' field in package description file of '$pkg_name'!\n"
 
 		# The db file is important for upgrading packages in the order they were installed!
-		# As the entries are not deleted upon uninstallation, over time, a dependence ordering
-		# is being built, so that if uninstalled packages are reinstalled, upgrading still
+		# As the entries are not deleted upon removal, over time, a dependence ordering
+		# is being built, so that if removed packages are reinstalled, upgrading still
 		# works as before.
 		local db_file="${pkgix_root}/${INSTALLED_DB}.db"
 
@@ -810,15 +821,16 @@ pkg_install() {
 		fi
 
 		msg_printf "${CgrnB}$pkg_name (${version:-})${Crst} successfully installed.\n"
+		log_printf "$pkgix_root" "$pkg_name (${version:-}) installed\n"
 	) || exit $?
 
 	return $RET_OK
 }
 
 ##
-# pkg_uninstall pkgix_root pkg_name
+# pkg_remove pkgix_root pkg_name
 #
-pkg_uninstall() {
+pkg_remove() {
 	local pkgix_root="$1"
 	local pkg_name="$2"
 	local purge="${3:-0}"
@@ -827,6 +839,7 @@ pkg_uninstall() {
 	local backup_file="${db_prefix}/files.backup"
 	local version_file="${db_prefix}/version"
 	local info_file="${db_prefix}/info"
+	local version="$(<"$version_file")"
 
 	if [[ ! -f "$files_file" ]]; then
 		error_printf "'$files_file' does not exist!\n"
@@ -838,7 +851,7 @@ pkg_uninstall() {
 		: > "$backup_file"
 	fi
 
-	msg_printf "${Cgrn}$pkg_name ($(<"$version_file"))${Crst} uninstalling...\n"
+	msg_printf "${Cgrn}$pkg_name (${version})${Crst} removing...\n"
 
 	local backup_path
 	local backup_checksum_sha256
@@ -890,13 +903,14 @@ pkg_uninstall() {
 	rm "$version_file"
 	rm "$info_file"
 
-	# Clean up installed db
+	# Clean up db
 	remove_empty_dirs "${pkgix_root}/${INSTALLED_DB}"
 
-	# Set package as uninstalled
-	sed -i "s:^.|${pkg_name}$:u|${pkg_name}:" "${pkgix_root}/${INSTALLED_DB}.db"
+	# Set package as removed
+	sed -i "s:^.|${pkg_name}$:r|${pkg_name}:" "${pkgix_root}/${INSTALLED_DB}.db"
 
-	msg_printf "${CgrnB}$pkg_name${Crst} successfully uninstalled.\n"
+	msg_printf "${CgrnB}$pkg_name (${version})${Crst} successfully removed.\n"
+	log_printf "$pkgix_root" "$pkg_name (${version}) removed\n"
 }
 
 ##
@@ -972,6 +986,7 @@ root_upgrade() {
 			elif [[ "${version:-}" != "$installed_version" ]] || (( arg_reinstall )); then
 				msg_printf "${Cylw}Upgrading${Crst} $pkg_name ($installed_version -> ${version:-})"
 				(( ! arg_reinstall )) && printf "\n" || printf " - reinstall\n"
+				log_printf "$pkgix_root" "upgrading $pkg_name ($installed_version -> ${version:-})\n"
 
 				pkg_install "$pkgix_root" "$pkg_name" 1
 			else
@@ -1005,9 +1020,9 @@ cmd_upgrade() {
 }
 
 ##
-# cmd_uninstall pkgix_root pkg_name...
+# cmd_remove pkgix_root pkg_name...
 #
-cmd_uninstall() {
+cmd_remove() {
 	local pkgix_root="${1:-}"
 	shift || { error_printf "No targets specified!\n"; exit $EXIT_ERR; }
 
@@ -1018,12 +1033,12 @@ cmd_uninstall() {
 
 	pkgix_root="$(cd "$pkgix_root" && pwd)"
 
-	msg_printf "Uninstalling from $pkgix_root: $*\n"
+	msg_printf "Removing from $pkgix_root: $*\n"
 	prompt_continue || exit $EXIT_USER_ABORT
 	
 	local pkg_name
 	for pkg_name in "$@"; do
-		pkg_uninstall "$pkgix_root" "$pkg_name" "$arg_purge"
+		pkg_remove "$pkgix_root" "$pkg_name" "$arg_purge"
 	done
 }
 
@@ -1068,7 +1083,7 @@ cmd_list() {
 	for pkgix_root in "$@"; do
 		if [[ -d "$pkgix_root" ]]; then
 			pkgix_root="$(cd "$pkgix_root" && pwd)"
-			printf "${CgrnB}${pkgix_root}${Crst}\n" 1>&2
+			(( ! arg_quiet )) && printf "${CgrnB}${pkgix_root}${Crst}\n" 1>&2 || :
 
 			if [[ -d "${pkgix_root}/${INSTALLED_DB}" ]]; then
 				find "${pkgix_root}/${INSTALLED_DB}" -type f -name "version" | sort |
@@ -1076,10 +1091,15 @@ cmd_list() {
 					pkg_name="${version_file##${pkgix_root}/${INSTALLED_DB}/}"
 					pkg_name="${pkg_name%%/version}"
 					info_file="${pkgix_root}/${INSTALLED_DB}/${pkg_name}/info"
-					(
-						source "$info_file"
-						printf "%-42s %-18s %s\n" "${pkg_name}" "$(<$version_file)" "${description:-}"
-					)
+
+					if (( arg_quiet )); then
+						echo "$pkgix_root $pkg_name"
+					else
+						(
+							source "$info_file"
+							printf "%-42s %-18s %s\n" "${pkg_name}" "$(<$version_file)" "${description:-}"
+						)
+					fi
 				done
 			fi
 		fi
@@ -1106,6 +1126,7 @@ cmd_show() {
 	local pkg_name
 	local pkgix_root
 	local db_prefix
+	local files_file
 	local version_file
 	local info_file
 	for pkg_name in "$@"; do
@@ -1115,25 +1136,35 @@ cmd_show() {
 				exit $EXIT_ERR
 			fi
 
+			pkgix_root="$(cd "$pkgix_root" && pwd)"
 			db_prefix="${pkgix_root}/${INSTALLED_DB}/${pkg_name}"
+			files_file="${db_prefix}/files"
 			version_file="${db_prefix}/version"
 			info_file="${db_prefix}/info"
 
 			if [[ -f "$version_file" && -f "$info_file" ]]; then
-				source "$info_file"
-				echo "$pkg_name ($(<$version_file)):"
-				echo "Description  : ${description:-}"
-				echo "Website      : ${website:-}"
-				echo "License      : ${license[*]:+${license[*]}}"
-				echo "Install date : ${installdate:-}"
-				echo
+				if (( arg_list_files )); then
+					local prefix_line=""
+					(( ! arg_quiet )) && prefix_line="$pkg_name " || :
+					while read path; do
+						[[ -n "$path" ]] && echo "${prefix_line}${pkgix_root}/${path}" || :
+					done < "$files_file"
+				else
+					source "$info_file"
+					echo "$pkg_name ($(<$version_file)): ${pkgix_root}"
+					echo " Description  : ${description:-}"
+					echo " Website      : ${website:-}"
+					echo " License      : ${license[*]:+${license[*]}}"
+					echo " Install date : ${installdate:-}"
 
-				unset description
-				unset website
-				unset license
-				unset installdate
+					echo
+					unset description
+					unset website
+					unset license
+					unset installdate
+				fi
 
-				# found
+				# found, stop searching further pkgix_roots
 				break
 			else
 				# indicate not yet found, continue search
@@ -1184,8 +1215,8 @@ prog_usage() {
 	echo
 	echo "Commands available:"
 	echo "    install    Install a package in a prefix environment"
+	echo "    remove     Remove an installed package"
 	echo "    upgrade    Upgrade a prefix environment"
-	echo "    uninstall  Uninstall an installed package"
 	echo "    avail      List packages available to install"
 	echo "    list       List installed packages"
 	echo "    show       Show information about installed packages"
@@ -1194,12 +1225,16 @@ prog_usage() {
 	echo
 	echo "Options:"
 	echo "   -r, --repo-urls"
-	echo "       Specify additional package repository URL; use '$URL_SEP' to separate multiple repositories."
-	echo "       Currently supported protocols are: file:// (default), http://, https://, ftp://"
+	echo "       Specify additional package repository URL; use '$URL_SEP' to"
+	echo "       separate multiple repositories. Currently supported protocols are:"
+	echo "           file:// (default), http://, https://, ftp://"
 	echo "   -n, --noconfirm"
 	echo "       Proceed without asking the user for confirmation."
 	echo "   -v, --verbose"
 	echo "       Be more verbose."
+	echo "   -q, --quiet"
+	echo "       Be less verbose; some commands can show less information,"
+	echo "       which makes their output more easily parsable by other tools."
 	echo "   -d, --debug"
 	echo "       Debug mode: enable nounset for package files"
 	echo "   -h, --help"
@@ -1244,6 +1279,7 @@ reset_traps
 
 # Get command line options
 arg_verbose=0
+arg_quiet=0
 arg_noconfirm=0
 arg_debug=0
 
@@ -1256,6 +1292,7 @@ while :; do
 			shift
 			;;
 		-v|--verbose) arg_verbose=1 ;;
+		-q|--quiet) arg_quiet=1 ;;
 		-n|--noconfirm) arg_noconfirm=1 ;;
 		-d|--debug) arg_debug=1 ;;
 		-h|--help) prog_usage; exit $EXIT_OK ;;
@@ -1290,7 +1327,7 @@ case "$cmd" in
 		done
 
 		;;& # Evaluate next statements!
-	uninstall)
+	remove)
 		arg_purge=0
 
 		while :; do
@@ -1302,7 +1339,18 @@ case "$cmd" in
 		done
 
 		;;&
-	install|uninstall)
+	show)
+		arg_list_files=0
+
+		while :; do
+			case "${1:-}" in
+				-l|--list) arg_list_files=1 ;;
+				*) break ;;
+			esac
+			shift
+		done
+		;;&
+	install|remove)
 		if [[ -z "${PKGIX_ROOT:-}" ]]; then
 			cmd_$cmd "$@"
 		else
@@ -1358,14 +1406,21 @@ case "$cmd" in
 				echo "    --ignore-checksums"
 				echo "        Ignores checksums for remotely fetched files."
 				;;
-			uninstall)
+			remove)
 				echo "Usage: $PROGNAME $1 [-P|--purge]"
 				echo
 				echo "Options:"
 				echo "    -P, --purge"
-				echo "        Force uninstallation of all installed files, even those marked for backup."
+				echo "        Force removal of all installed files, even those marked for backup."
 				;;
-			avail|list|show|showenv|chenv|help)
+			show)
+				echo "Usage: $PROGNAME $1 [-l|--list] (<pkgix-roots>... --|<pkgix-root>) <pkgs>..."
+				echo
+				echo "Options:"
+				echo "    -l, --list"
+				echo "        List installed package files."
+				;;
+			avail|list|showenv|chenv|help)
 				# TODO: add missing help messages
 				echo "No further information available."
 				;;
