@@ -59,8 +59,11 @@ readonly RET_OK RET_ERR RET_INVALID_OPTION RET_USER_ABORT
 : ${PKGIX_FETCH:="wget -O %s"}
 : ${PKGIX_COLOR:=1}
 
-# PKGIX_ROOT: If set, PKGIX_ROOT is being used as the default
-# root (no need to specify for each command).
+# PKGIX_ROOT: If set, PKGIX_ROOT is being used as the default root
+#	(no need to specify for each command).
+#
+# PKGIX_BUILD_DIR: If set, uses ${PKGIX_BUILD_DIR}/{pkgix-build,pkgix-install}
+#	to build packages in, instead of default <prefix-root>/{.pkgix-build,.pkgix-install}.
 
 ##
 # Color config
@@ -117,20 +120,6 @@ else
 fi
 
 ##
-# in_list needle hay...
-in_list() {
-	local needle="$1"
-	shift
-
-	local elem
-	for elem in "$@"; do
-		[[ "$elem" == "$needle" ]] && return $RET_OK || :
-	done
-
-	return $RET_ERR
-}
-
-##
 # printf wrappers
 #
 msg_printf() {
@@ -147,6 +136,33 @@ error_printf() {
 
 warning_printf() {
 	msg_printf "${Cylw}WARNING:${Crst} ""$@"
+}
+
+##
+# Sanitize environment variables (need *_printf)
+#
+if [[ -n "${PKGIX_BUILD_DIR:-}" ]]; then
+	if [[ ! -d "$PKGIX_BUILD_DIR" ]]; then
+		error_printf "PKGIX_BUILD_DIR='$PKGIX_BUILD_DIR' not a valid directory!\n"
+		exit $EXIT_ERR
+	fi
+
+	PKGIX_BUILD_DIR="$(cd "$PKGIX_BUILD_DIR" && pwd)"
+fi
+
+##
+# in_list needle hay...
+#
+in_list() {
+	local needle="$1"
+	shift
+
+	local elem
+	for elem in "$@"; do
+		[[ "$elem" == "$needle" ]] && return $RET_OK || :
+	done
+
+	return $RET_ERR
 }
 
 ##
@@ -640,8 +656,16 @@ pkg_install() {
 
 		msg_printf "${Cgrn}$pkg_name (${version:-})${Crst} building...\n"
 
-		local build_dir="${pkgix_root}/.${PROGNAME}-build"
-		local install_dir="${pkgix_root}/.${PROGNAME}-tmpinstall"
+		local build_dir
+		local install_dir
+		if [[ -n "${PKGIX_BUILD_DIR:-}" ]]; then
+			build_dir="${PKGIX_BUILD_DIR}/${PROGNAME}-build"
+			install_dir="${PKGIX_BUILD_DIR}/${PROGNAME}-install"
+		else
+			build_dir="${pkgix_root}/.${PROGNAME}-build"
+			install_dir="${pkgix_root}/.${PROGNAME}-install"
+		fi
+
 		mkdir -p "$build_dir"
 		mkdir -p "$install_dir"
 
@@ -830,6 +854,7 @@ pkg_uninstall() {
 
 			# If file changed, exclude from deletion
 			if [[ "$backup_checksum_sha256" != "$backup_checksum_sha256_f" ]]; then
+				verbose_printf "Keeping modified '${backup_path}'\n"
 				echo "^${backup_path}$"
 			fi
 		else
@@ -1311,16 +1336,16 @@ case "$cmd" in
 				echo "                     [-k|--keep-build-dir] [--ignore-checksums]"
 
 				if [[ "$1" == "install" ]]; then
-					echo "                     <pkgix-dir> <pkgs>..."
+					echo "                     <pkgix-root> <pkgs>..."
 				else
-					echo "                     <pkgix-dirs>..."
+					echo "                     <pkgix-roots>..."
 				fi
 
 				echo
 				echo "Options:"
 				echo "    -f, --force"
 				echo "        Force installation of programs that are: already available outside of"
-				echo "        <pkgix-dir>; satisfied metapackages; incompatible with the current system;"
+				echo "        <pkgix-roots>; satisfied metapackages; incompatible with the current system;"
 				echo "        conflicting with already installed files."
 				echo "        Also forces overwriting files which were normally preserved (see backup)."
 				echo "    -d, --nodeps"
@@ -1341,6 +1366,7 @@ case "$cmd" in
 				echo "        Force uninstallation of all installed files, even those marked for backup."
 				;;
 			avail|list|show|showenv|chenv|help)
+				# TODO: add missing help messages
 				echo "No further information available."
 				;;
 			*)
