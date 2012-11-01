@@ -1477,8 +1477,13 @@ case "$cmd" in
 				echo "    -l, --list"
 				echo "        List installed package files."
 				;;
-			avail|list|showenv|chenv|help)
-				# TODO: add missing help messages
+			help)
+				echo "Usage: $PROGNAME $1 <command>"
+				;;
+			list|showenv|chenv)
+				echo "Usage: $PROGNAME $1 <pkgix-roots>..."
+				;;
+			avail)
 				echo "No further information available."
 				;;
 			*)
