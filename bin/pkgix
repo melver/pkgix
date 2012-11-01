@@ -26,7 +26,7 @@ set -o nounset
 ##
 # Constants
 #
-PROG_VERSION="0.1.3"
+PROG_VERSION="0.3.0"
 PROGNAME="pkgix"
 DB_PREFIX="var/lib/${PROGNAME}/local"
 LOG_FILE="var/log/${PROGNAME}.log"
@@ -1477,14 +1477,14 @@ case "$cmd" in
 				echo "    -l, --list"
 				echo "        List installed package files."
 				;;
-			help)
-				echo "Usage: $PROGNAME $1 <command>"
-				;;
 			list|showenv|chenv)
 				echo "Usage: $PROGNAME $1 <pkgix-roots>..."
 				;;
 			avail)
 				echo "No further information available."
+				;;
+			help)
+				echo "Usage: $PROGNAME $1 <command>"
 				;;
 			*)
 				echo "Please specify valid command."
