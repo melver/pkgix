@@ -209,12 +209,12 @@ case "$OSTYPE" in
 esac
 
 ##
-# lock_prefix pkgix_root
+# lock_root pkgix_root
 # Checks for existing lock, creates a lock file in pkgix_root if not locked.
 #
 # Should not call from subshells!
 #
-lock_prefix() {
+lock_root() {
 	local pkgix_root="$(cd "$1" && pwd)"
 	local lock_file="${pkgix_root}/${LOCK_FILE}"
 	if [[ -f "$lock_file" ]]; then
@@ -224,14 +224,14 @@ lock_prefix() {
 
 	[[ ! -d "${lock_file%/*}" ]] && mkdir -p "${lock_file%/*}" || :
 	: > "$lock_file"
-	trap "unlock_prefix '${pkgix_root}'" EXIT
+	trap "unlock_root '${pkgix_root}'" EXIT
 	return $RET_OK
 }
 
 ##
-# unlock_prefix pkgix_root
+# unlock_root pkgix_root
 #
-unlock_prefix() {
+unlock_root() {
 	local pkgix_root="$(cd "$1" && pwd)"
 	local lock_file="${pkgix_root}/${LOCK_FILE}"
 	rm "$lock_file"
@@ -559,6 +559,18 @@ source_pkg() {
 # description files should be small enough to trade some code safety for
 # convenience. Enable inside the functions if neccessary.
 #
+# Makes the following extra variables available to package description file:
+#     prefix=pkgix_root
+#     destdir=install_dir
+#
+# Otherwise potentially useful variables which are available from parent scope:
+#     old_version, if package is being upgraded (see root_upgrade)
+#
+# Due to the way BASH behaves, propagating even local variables from a parent
+# function to its children, ALL variables from parents will be available.
+# However, as the function to be called is executed in a subshell, none of
+# these variables can be affected after completion of sourced_pkg_call.
+#
 sourced_pkg_call() {
 	local funcname=$1
 
@@ -607,8 +619,8 @@ pkg_install() {
 	msg_printf "${CcynB}=> $pkg_name${Crst}\n"
 
 	(
-		# Unset previous variables, otherwise we might end in an endless loop
-		# when resolving dependencies
+		# Unset previous package variables, otherwise we might end in an endless loop
+		# when resolving dependencies, or might even keep unset variables/functions.
 		unset metapkg
 		unset satisfied
 		unset version
@@ -925,7 +937,7 @@ pkg_remove() {
 	done | sort -rn |
 	while read filename; do
 		# (2) Then check for empty directories and delete if empty
-		filename="${filename#*:}"
+		local filename="${filename#*:}"
 		remove_empty_dirs "${pkgix_root}/$filename" 0
 	done
 
@@ -972,7 +984,7 @@ cmd_install() {
 	pkgix_root="$(cd "$pkgix_root" && pwd)"
 	export_env "$pkgix_root"
 
-	lock_prefix "$pkgix_root" || exit $EXIT_ERR
+	lock_root "$pkgix_root" || exit $EXIT_ERR
 
 	msg_printf "Installing into $pkgix_root: $*\n"
 
@@ -983,7 +995,7 @@ cmd_install() {
 		pkg_install "$pkgix_root" "$pkg_name" "$arg_reinstall"
 	done
 
-	unlock_prefix "$pkgix_root"
+	unlock_root "$pkgix_root"
 }
 
 ##
@@ -1000,38 +1012,42 @@ root_upgrade() {
 	pkgix_root="$(cd "$pkgix_root" && pwd)"
 	export_env "$pkgix_root"
 
+	lock_root "$pkgix_root" || exit $EXIT_ERR
+
 	msg_printf "Upgrading $pkgix_root ...\n"
 
 	prompt_continue || return $RET_USER_ABORT
 
 	grep "^i|" "${pkgix_root}/${DB_PREFIX}.db" |
 	while read pkg_name; do
-		pkg_name="${pkg_name##i|}"
-		version_file="${pkgix_root}/${DB_PREFIX}/${pkg_name}/version"
+		local pkg_name="${pkg_name##i|}"
+		local version_file="${pkgix_root}/${DB_PREFIX}/${pkg_name}/version"
 
 		if [[ ! -f "$version_file" ]]; then
 			warning_printf "Inconsistent database: no metadata for '$pkg_name'\n"
 			continue
 		fi
 
-		installed_version="$(<$version_file)"
+		old_version="$(<$version_file)"
 
 		(
 			if ! source_pkg "$pkg_name"; then
 				warning_printf "Could not find package description file for '$pkg_name', skipping upgrade...\n"
-			elif [[ "${version:-}" != "$installed_version" ]] || (( arg_reinstall )); then
-				msg_printf "${Cylw}Upgrading${Crst} $pkg_name ($installed_version -> ${version:-})"
+			elif [[ "${version:-}" != "$old_version" ]] || (( arg_reinstall )); then
+				msg_printf "${Cylw}Upgrading${Crst} $pkg_name ($old_version -> ${version:-})"
 				(( ! arg_reinstall )) && printf "\n" || printf " - reinstall\n"
-				log_printf "$pkgix_root" "upgrading $pkg_name ($installed_version -> ${version:-})\n"
+				log_printf "$pkgix_root" "upgrading $pkg_name ($old_version -> ${version:-})\n"
 
 				pkg_install "$pkgix_root" "$pkg_name" 1
 			else
-				msg_printf "$pkg_name ($installed_version) is up to date\n"
+				msg_printf "$pkg_name ($old_version) is up to date\n"
 			fi
 		) || exit $?  # Break out of pipe-subshell
 	done || return $? # Take return code if pipe-subshell exited with errors
 
 	msg_printf "Done upgrading.\n"
+
+	unlock_root "$pkgix_root"
 }
 
 ##
@@ -1046,16 +1062,12 @@ cmd_upgrade() {
 	local pkgix_root
 	local ret_code
 	for pkgix_root in "$@"; do
-		lock_prefix "$pkgix_root" || exit $EXIT_ERR
-
 		# Run nested, not to pollute subsequent upgrades with export_env
 		# The environment should be set accordingly prior to upgrading!
 		( root_upgrade "$pkgix_root" ) && ret_code=$? || ret_code=$?
 		if (( ret_code != RET_OK && ret_code != RET_INVALID_OPTION && ret_code != RET_USER_ABORT )); then
 			exit $EXIT_ERR
 		fi
-
-		unlock_prefix "$pkgix_root"
 	done
 }
 
@@ -1073,7 +1085,7 @@ cmd_remove() {
 
 	pkgix_root="$(cd "$pkgix_root" && pwd)"
 
-	lock_prefix "$pkgix_root" || exit $EXIT_ERR
+	lock_root "$pkgix_root" || exit $EXIT_ERR
 
 	msg_printf "Removing from $pkgix_root: $*\n"
 	prompt_continue || exit $EXIT_USER_ABORT
@@ -1083,7 +1095,7 @@ cmd_remove() {
 		pkg_remove "$pkgix_root" "$pkg_name" "$arg_purge"
 	done
 
-	unlock_prefix "$pkgix_root"
+	unlock_root "$pkgix_root"
 }
 
 ##
@@ -1132,9 +1144,9 @@ cmd_list() {
 			if [[ -d "${pkgix_root}/${DB_PREFIX}" ]]; then
 				find "${pkgix_root}/${DB_PREFIX}" -type f -name "version" | sort |
 				while read version_file; do
-					pkg_name="${version_file##${pkgix_root}/${DB_PREFIX}/}"
+					local pkg_name="${version_file##${pkgix_root}/${DB_PREFIX}/}"
 					pkg_name="${pkg_name%%/version}"
-					info_file="${pkgix_root}/${DB_PREFIX}/${pkg_name}/info"
+					local info_file="${pkgix_root}/${DB_PREFIX}/${pkg_name}/info"
 
 					if (( arg_quiet )); then
 						echo "$pkgix_root $pkg_name"
@@ -1190,6 +1202,7 @@ cmd_show() {
 				if (( arg_list_files )); then
 					local prefix_line=""
 					(( ! arg_quiet )) && prefix_line="$pkg_name " || :
+					local path
 					while read path; do
 						[[ -n "$path" ]] && echo "${prefix_line}${pkgix_root}/${path}" || :
 					done < "$files_file"
