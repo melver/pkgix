@@ -843,9 +843,22 @@ pkg_install() {
 
 		{
 			echo "description=\"${description:-}\""
-			echo "license=(${license[*]:+${license[*]}})"
-			echo "website=\"${website:-}\""
 			echo "installdate=\"$(date)\""
+			echo "website=\"${website:-}\""
+
+			printf "license=("
+			local license_elem
+			for license_elem in "${license[@]:+${license[@]}}"; do
+				printf " '%s'" "$license_elem"
+			done
+			printf " )\n"
+
+			printf "depends=("
+			local dep_name
+			for dep_name in "${depends[@]:+${depends[@]}}"; do
+				printf " '%s'" "$dep_name"
+			done
+			printf " )\n"
 		} > "${db_prefix}/info"
 
 		[[ -z "${description:-}" ]] && warning_printf "Empty 'description' field in package description file of '$pkg_name'!\n"
@@ -1212,12 +1225,14 @@ cmd_show() {
 					echo " Description  : ${description:-}"
 					echo " Website      : ${website:-}"
 					echo " License      : ${license[*]:+${license[*]}}"
+					echo " Depends      : ${depends[*]:+${depends[*]}}"
 					echo " Install date : ${installdate:-}"
 
 					echo
 					unset description
 					unset website
 					unset license
+					unset depends
 					unset installdate
 				fi
 
