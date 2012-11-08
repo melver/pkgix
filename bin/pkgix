@@ -1119,7 +1119,7 @@ cmd_avail() {
 
 	local repo_url
 	for repo_url in $PKGIX_REPO_URLS; do
-		printf "${CbluB}-> ${CgrnB}${repo_url}${Crst}\n"
+		printf "%b" "${CbluB}-> ${CgrnB}${repo_url}${Crst}\n"
 		case "$repo_url" in
 			http://*|https://*|ftp://*)
 				msg_printf "Listing packages for a HTTP repository is not supported!\n"
