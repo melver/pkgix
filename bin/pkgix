@@ -23,7 +23,7 @@ set -o errtrace
 set -o errexit
 set -o nounset
 
-##
+#============================================================================
 # Constants
 #
 PROG_VERSION="0.3.0"
@@ -35,7 +35,7 @@ URL_SEP=";"
 METAPKG_DUMMY="_dummy"
 readonly PROG_VERSION PROGNAME DB_PREFIX LOG_FILE URL_SEP METAPKG_DUMMY
 
-##
+#============================================================================
 # Exit codes
 #
 EXIT_OK=0
@@ -44,7 +44,7 @@ EXIT_INVALID_OPTION=2
 EXIT_USER_ABORT=3
 readonly EXIT_OK EXIT_ERR EXIT_INVALID_OPTION EXIT_USER_ABORT
 
-##
+#============================================================================
 # Function return codes
 #
 RET_OK=0
@@ -53,7 +53,7 @@ RET_INVALID_OPTION=2
 RET_USER_ABORT=3
 readonly RET_OK RET_ERR RET_INVALID_OPTION RET_USER_ABORT
 
-##
+#============================================================================
 # Configurable variables, settable via environment
 #
 : ${PKGIX_REPO_URLS:="${HOME}/${PROGNAME}-repo/pkgs"}
@@ -72,7 +72,7 @@ readonly RET_OK RET_ERR RET_INVALID_OPTION RET_USER_ABORT
 TEXTDOMAIN="$PROGNAME"
 TEXTDOMAINDIR="$(cd "${0%/*}"/.. && pwd)/share/locale"
 
-##
+#============================================================================
 # Color config
 #
 # Check if color is enabled and we have stderr/in on terminal
@@ -126,36 +126,36 @@ else
 	CcynB=
 fi
 
-##
+#============================================================================
 # log_printf pkgix_root args...
 #
-log_printf() {
+log_printf() { #{{{
 	local log_file="${1}/${LOG_FILE}"
 	shift
 	[[ ! -d "${log_file%/*}" ]] && mkdir -p "${log_file%/*}" || :
 	printf "[$(date)] ""$@" >> "$log_file"
-}
+} #}}}
 
-##
+#============================================================================
 # printf wrappers
 #
-msg_printf() {
+msg_printf() { #{{{
 	printf "${Cpur}[${PROGNAME}]${Crst} ""$@" 1>&2
-}
+} #}}}
 
-verbose_printf() {
+verbose_printf() { #{{{
 	(( arg_verbose )) && msg_printf "$@" || :
-}
+} #}}}
 
-error_printf() {
+error_printf() { #{{{
 	msg_printf "${Cred}"$"ERROR:""${Crst} ""$@"
-}
+} #}}}
 
-warning_printf() {
+warning_printf() { #{{{
 	msg_printf "${Cylw}"$"WARNING:""${Crst} ""$@"
-}
+} #}}}
 
-##
+#============================================================================
 # Sanitize environment variables (need *_printf)
 #
 if [[ -n "${PKGIX_BUILD_DIR:-}" ]]; then
@@ -167,10 +167,10 @@ if [[ -n "${PKGIX_BUILD_DIR:-}" ]]; then
 	PKGIX_BUILD_DIR="$(cd "$PKGIX_BUILD_DIR" && pwd)"
 fi
 
-##
+#============================================================================
 # in_list needle hay...
 #
-in_list() {
+in_list() { #{{{
 	local needle="$1"
 	shift
 
@@ -180,13 +180,13 @@ in_list() {
 	done
 
 	return $RET_ERR
-}
+} #}}}
 
-##
+#============================================================================
 # OS dependent functions
 # Also set ostype and architecture (aliases to OS and arch name)
 #
-case "$OSTYPE" in
+case "$OSTYPE" in #{{{
 	*freebsd*|*FreeBSD*)
 		ostype="freebsd"
 		architecture="$(uname -m)"
@@ -211,15 +211,15 @@ case "$OSTYPE" in
 			find "$@" -printf "%P\n"
 		}
 		;;
-esac
+esac #}}}
 
-##
+#============================================================================
 # lock_root pkgix_root
 # Checks for existing lock, creates a lock file in pkgix_root if not locked.
 #
 # Should not call from subshells!
 #
-lock_root() {
+lock_root() { #{{{
 	local pkgix_root="$(cd "$1" && pwd)"
 	local lock_file="${pkgix_root}/${LOCK_FILE}"
 	if [[ -f "$lock_file" ]]; then
@@ -231,22 +231,22 @@ lock_root() {
 	: > "$lock_file"
 	trap "unlock_root '${pkgix_root}'" EXIT
 	return $RET_OK
-}
+} #}}}
 
-##
+#============================================================================
 # unlock_root pkgix_root
 #
-unlock_root() {
+unlock_root() { #{{{
 	local pkgix_root="$(cd "$1" && pwd)"
 	local lock_file="${pkgix_root}/${LOCK_FILE}"
 	rm "$lock_file"
 	trap - EXIT
-}
+} #}}}
 
-##
+#============================================================================
 # extract_archive path_to_archive
 #
-extract_archive() {
+extract_archive() { #{{{
 	local archive_name="${1:-}"
 
 	if [[ -f "$archive_name" ]] ; then
@@ -273,13 +273,13 @@ extract_archive() {
 		error_printf $"'%s' is not a valid file !\n" "$archive_name"
 		exit $EXIT_ERR
 	fi
-}
+} #}}}
 
-##
+#============================================================================
 # fetch url checksum_sha256 [file_name]
 # Function for use in package description files.
 #
-fetch() {
+fetch() { #{{{
 	local url="${1:-}"
 	local checksum_sha256="${2:-}"
 	local file_name="${3:-${url##*/}}"
@@ -331,40 +331,40 @@ fetch() {
 			warning_printf $"No checksum for '%s' (%s)!\n" "$file_name" "$file_checksum_sha256"
 		fi
 	fi
-}
+} #}}}
 
-##
+#============================================================================
 # fetch_extract url checksum [archive_name]
 # Function for use in package description files.
 #
-fetch_extract() {
+fetch_extract() { #{{{
 	local url="${1:-}"
 	local checksum_sha256="${2:-}"
 	local archive_name="${3:-${url##*/}}"
 
 	fetch "$url" "$checksum_sha256" "$archive_name"
 	extract_archive "$archive_name"
-}
+} #}}}
 
-##
+#============================================================================
 # remove_empty_dirs path [depth]
 # Remove empty directories in path.
 #
-remove_empty_dirs() {
+remove_empty_dirs() { #{{{
 	local path="$1"
 	local depth="${2:-}"
 	local find_args
 	[[ -z "$depth" ]] && find_args=() || find_args=("-maxdepth" "$depth")
 
 	find "$path" "${find_args[@]:+${find_args[@]}}" -type d -empty -delete
-}
+} #}}}
 
-##
+#============================================================================
 # prompt_continue
 # Prompt user for "Continue ? [Y/n]"
 # Return code will be RET_OK for y and RET_ERR for n.
 #
-prompt_continue() {
+prompt_continue() { #{{{
 	(( arg_noconfirm )) && return $RET_OK
 
 	local answer
@@ -378,12 +378,12 @@ prompt_continue() {
 	fi
 
 	return $RET_OK
-}
+} #}}}
 
-##
+#============================================================================
 # export_env pkgix_root
 #
-export_env() {
+export_env() { #{{{
 	[[ ! -d "${1:-}" ]] && return $RET_ERR
 	local pkgix_root="$(cd "$1" && pwd)"
 
@@ -451,12 +451,12 @@ export_env() {
 	fi
 
 	return $RET_OK
-}
+} #}}}
 
-##
+#============================================================================
 # cmd_showenv pkgix_root...
 #
-cmd_showenv() {
+cmd_showenv() { #{{{
 	local pkgix_root
 	for pkgix_root in "$@"; do
 		export_env "$pkgix_root" || :
@@ -483,19 +483,19 @@ cmd_showenv() {
 			[[ -n "${CPATH:-}" ]] && echo "export CPATH=\"$CPATH\"" || :
 			;;
 	esac
-}
+} #}}}
 
-##
+#============================================================================
 # is_pkg_pointer pkg_file
 #
-is_pkg_pointer() {
+is_pkg_pointer() { #{{{
 	[[ "$(wc -l < "$1")" =~ ^[^0-9]*[01][^0-9]*$ ]]
-}
+} #}}}
 
-##
+#============================================================================
 # source_pkg_file pkg_file
 #
-source_pkg_file() {
+source_pkg_file() { #{{{
 	local pkg_file="$1"
 
 	if is_pkg_pointer "$pkg_file"; then
@@ -511,12 +511,12 @@ source_pkg_file() {
 	else
 		source "$pkg_file"
 	fi
-}
+} #}}}
 
-##
+#============================================================================
 # source_pkg pkg_name
 #
-source_pkg() {
+source_pkg() { #{{{
 	local pkg_name="$1"
 	local pkg_file
 	local o_IFS="$IFS" ; IFS="$URL_SEP"
@@ -554,9 +554,9 @@ source_pkg() {
 	IFS="$o_IFS"
 
 	[[ -n "${version:-}" || "${metapkg:-}" == "$METAPKG_DUMMY" ]]
-}
+} #}}}
 
-##
+#============================================================================
 # sourced_pkg_call funcname [pkgix_root [install_dir]]
 # Wrap sourced function call execution.
 #
@@ -577,7 +577,7 @@ source_pkg() {
 # However, as the function to be called is executed in a subshell, none of
 # these variables can be affected after completion of sourced_pkg_call.
 #
-sourced_pkg_call() {
+sourced_pkg_call() { #{{{
 	local funcname=$1
 
 	if ! type -p $funcname > /dev/null; then
@@ -595,13 +595,13 @@ sourced_pkg_call() {
 		(( ! arg_debug )) && set +o nounset || :
 		$funcname
 	)
-}
+} #}}}
 
-##
+#============================================================================
 # unset_sourced_pkg
 # unsets all fields that could be set by a package file
 #
-unset_sourced_pkg() {
+unset_sourced_pkg() { #{{{
 	unset metapkg
 	unset satisfied
 	unset version
@@ -616,23 +616,23 @@ unset_sourced_pkg() {
 	unset postinstall
 	unset forceinstall
 	unset backup
-}
+} #}}}
 
-##
+#============================================================================
 # pkg_isinstalled_db pkgix_root pkg_name
 #
-pkg_isinstalled_db() {
+pkg_isinstalled_db() { #{{{
 	local pkgix_root="$1"
 	local pkg_name="$2"
 	local db_prefix="${pkgix_root}/${DB_PREFIX}/${pkg_name}"
 
 	[[ -f "${db_prefix}/version" && -f "${db_prefix}/files" ]]
-}
+} #}}}
 
-##
+#============================================================================
 # set_db_vars pkgix_root pkg_name
 #
-set_db_vars() {
+set_db_vars() { #{{{
 	local pkgix_root="$1"
 	local pkg_name="$2"
 	db_prefix="${pkgix_root}/${DB_PREFIX}/${pkg_name}"
@@ -640,23 +640,23 @@ set_db_vars() {
 	db_backup_file="${db_prefix}/files.backup"
 	db_version_file="${db_prefix}/version"
 	db_info_file="${db_prefix}/info"
-}
+} #}}}
 
-##
+#============================================================================
 # unset_db_vars
 #
-unset_db_vars() {
+unset_db_vars() { #{{{
 	unset db_prefix
 	unset db_files_file
 	unset db_backup_file
 	unset db_version_file
 	unset db_info_file
-}
+} #}}}
 
-##
+#============================================================================
 # pkg_install_db pkgix_root pkg_name
 #
-pkg_install_db() {
+pkg_install_db() { #{{{
 	local pkgix_root="$1"
 	local pkg_name="$2"
 	local staging_files_file="$3"
@@ -715,23 +715,23 @@ pkg_install_db() {
 	fi
 
 	unset_db_vars
-}
+} #}}}
 
-##
+#============================================================================
 # unset_db_info
 #
-unset_db_info() {
+unset_db_info() { #{{{
 	unset description
 	unset website
 	unset license
 	unset depends
 	unset installdate
-}
+} #}}}
 
-##
+#============================================================================
 # db_list_installed
 #
-db_list_installed() {
+db_list_installed() { #{{{
 	local pkgix_root="$1"
 
 	if [[ -f "${pkgix_root}/${DB_PREFIX}.db" ]]; then
@@ -745,12 +745,12 @@ db_list_installed() {
 			echo "$pkg_name"
 		done
 	fi
-}
+} #}}}
 
-##
+#============================================================================
 # pkg_install pkgix_root pkg_name [reinstall]
 #
-pkg_install() {
+pkg_install() { #{{{
 	local pkgix_root="$1"
 	local pkg_name="$2"
 	local reinstall="${3:-0}"
@@ -968,12 +968,12 @@ pkg_install() {
 	) || exit $?
 
 	return $RET_OK
-}
+} #}}}
 
-##
+#============================================================================
 # pkg_remove pkgix_root pkg_name
 #
-pkg_remove() {
+pkg_remove() { #{{{
 	local pkgix_root="$1"
 	local pkg_name="$2"
 	local purge="${3:-0}"
@@ -1053,12 +1053,12 @@ pkg_remove() {
 	log_printf "$pkgix_root" "%s (%s) "$"removed\n" "$pkg_name" "$version"
 
 	unset_db_vars
-}
+} #}}}
 
-##
+#============================================================================
 # cmd_install pkgix_root pkg_name...
 #
-cmd_install() {
+cmd_install() { #{{{
 	if [[ -z "${1:-}" ]]; then
 		error_printf $"You need to specify a pkgix root!\n"
 		exit $EXIT_ERR
@@ -1094,12 +1094,12 @@ cmd_install() {
 	done
 
 	unlock_root "$pkgix_root"
-}
+} #}}}
 
-##
+#============================================================================
 # root_upgrade pkgix_root
 #
-root_upgrade() {
+root_upgrade() { #{{{
 	local pkgix_root="$1"
 
 	if [[ ! -f "${pkgix_root}/${DB_PREFIX}.db" ]]; then
@@ -1142,12 +1142,12 @@ root_upgrade() {
 	msg_printf $"Done upgrading.\n"
 
 	unlock_root "$pkgix_root"
-}
+} #}}}
 
-##
+#============================================================================
 # cmd_upgrade pkgix_root...
 #
-cmd_upgrade() {
+cmd_upgrade() { #{{{
 	if [[ -z "${1:-}" ]]; then
 		error_printf $"You need to specify at least one pkgix root!\n"
 		exit $EXIT_ERR
@@ -1163,12 +1163,12 @@ cmd_upgrade() {
 			exit $EXIT_ERR
 		fi
 	done
-}
+} #}}}
 
-##
+#============================================================================
 # cmd_remove pkgix_root pkg_name...
 #
-cmd_remove() {
+cmd_remove() { #{{{
 	local pkgix_root="${1:-}"
 	shift || { error_printf $"No targets specified!\n"; exit $EXIT_ERR; }
 
@@ -1190,12 +1190,12 @@ cmd_remove() {
 	done
 
 	unlock_root "$pkgix_root"
-}
+} #}}}
 
-##
+#============================================================================
 # cmd_avail
 #
-cmd_avail() {
+cmd_avail() { #{{{
 	local o_IFS="$IFS" ; IFS="$URL_SEP"
 
 	local repo_url
@@ -1223,12 +1223,12 @@ cmd_avail() {
 	done
 
 	IFS="$o_IFS"
-}
+} #}}}
 
-##
+#============================================================================
 # cmd_list pkgix_root...
 #
-cmd_list() {
+cmd_list() { #{{{
 	local pkgix_root
 	for pkgix_root in "$@"; do
 		if [[ -d "$pkgix_root" ]]; then
@@ -1252,12 +1252,12 @@ cmd_list() {
 			done
 		fi
 	done
-}
+} #}}}
 
-##
+#============================================================================
 # cmd_show pkgix_root pkg_name...
 #
-cmd_show() {
+cmd_show() { #{{{
 	local pkgix_roots=()
 
 	if [[ "$*" =~ " -- " ]]; then
@@ -1319,12 +1319,12 @@ cmd_show() {
 
 		unset_db_vars
 	done
-}
+} #}}}
 
-##
+#============================================================================
 # cmd_chenv pkgix_root...
 #
-cmd_chenv() {
+cmd_chenv() { #{{{
 	local pkgix_root
 	for pkgix_root in "$@"; do
 		export_env "$pkgix_root"
@@ -1332,9 +1332,9 @@ cmd_chenv() {
 
 	msg_printf $"Spawning shell\n"
 	exec "$PKGIX_SHELL"
-}
+} #}}}
 
-sanitize_repo_urls() {
+sanitize_repo_urls() { #{{{
 	local old_repo_urls="$PKGIX_REPO_URLS"
 	local o_IFS="$IFS" ; IFS="$URL_SEP"
 
@@ -1349,9 +1349,9 @@ sanitize_repo_urls() {
 	done
 
 	IFS="$o_IFS"
-}
+} #}}}
 
-prog_usage() {
+prog_usage() { #{{{
 	printf -- $"Usage: %s [-r|--repo-urls] [-n|--noconfirm] [-v|--verbose] [--debug]\n" "$PROGNAME"
 	printf -- $"             <command> [<args>]\n"
 	echo
@@ -1385,21 +1385,21 @@ prog_usage() {
 	printf -- $"       Display version information.\n"
 	echo
 	printf -- $"See '%s help <command>' for more information on a command.\n" "$PROGNAME"
-}
+} #}}}
 
-prog_version() {
+prog_version() { #{{{
 	echo "$PROGNAME $PROG_VERSION"
 	echo
 	echo "Copyright (C) 2012, Marco Elver <me AT marcoelver.com>"
 	echo
 	echo "This is free software; see the source for copying conditions."
 	echo "There is NO WARRANTY, to the extent permitted by law."
-}
+} #}}}
 
-##
+#============================================================================
 # trap_ERR errcode lineno command [traceback...]
 #
-trap_ERR() {
+trap_ERR() { #{{{
 	local errcode="$1"
 	local lineno="$2"
 	local command="$3"
@@ -1409,13 +1409,13 @@ trap_ERR() {
 	[[ -n "$*" ]] && printf -v traceback "\n    ${CredB}=>${Crst} in %s" "$@"
 	error_printf "line %s - '%s' failed (code=%s)%s\n" "$lineno" "$command" "$errcode" "$traceback"
 	exit 42
-}
+} #}}}
 
-reset_traps() {
+reset_traps() { #{{{
 	trap '{ msg_printf $"TERM signal caught, exiting...\n"; exit 42; }' TERM HUP QUIT
 	trap '{ msg_printf $"User aborted.\n"; exit 42; }' INT
 	trap 'trap_ERR "$?" "$LINENO" "$BASH_COMMAND" "${FUNCNAME[@]:+${FUNCNAME[@]}}"' ERR
-}
+} #}}}
 
 reset_traps
 
@@ -1585,4 +1585,4 @@ esac
 
 exit $EXIT_OK
 
-# vim: set noet :
+# vim: set noet foldmarker={{{,}}} foldlevel=0 fen fdm=marker :
