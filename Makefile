@@ -9,7 +9,7 @@ LOCALEDIR = share/locale
 
 MSGFMT = msgfmt -c
 
-TRANSLATIONS = $(shell for po in `ls po`; do echo "$(LOCALEDIR)/$${po%%.po}/LC_MESSAGES/$(PROGNAME).mo"; done)
+TRANSLATIONS = $(shell cd po && for po in *.po; do echo "$(LOCALEDIR)/$${po%%.po}/LC_MESSAGES/$(PROGNAME).mo"; done)
 
 .PHONY: all
 all: translations
