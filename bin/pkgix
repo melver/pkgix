@@ -496,7 +496,8 @@ is_pkg_pointer() { #{{{
 # source_pkg_file pkg_file
 #
 source_pkg_file() { #{{{
-	local pkg_file="$1"
+	local pkg_name="$1"
+	local pkg_file="$2"
 
 	if is_pkg_pointer "$pkg_file"; then
 		local resolved_pkg_name="$(<$pkg_file)"
@@ -506,7 +507,7 @@ source_pkg_file() { #{{{
 			return $RET_ERR
 		fi
 
-		msg_printf $"Points to %s\n" "$resolved_pkg_name"
+		verbose_printf $"Pointer: %s -> %s\n" "$pkg_name" "$resolved_pkg_name"
 		source_pkg "$resolved_pkg_name"
 	else
 		source "$pkg_file"
@@ -534,7 +535,7 @@ source_pkg() { #{{{
 				verbose_printf $"Trying: %s\n" "$pkg_file"
 				if wget -q -O "$tmpfile" "$pkg_file"; then
 					verbose_printf $"Source:"" ${Cgrn}%s${Crst}\n" "$pkg_file"
-					source_pkg_file "$tmpfile"
+					source_pkg_file "$pkg_name" "$tmpfile"
 					rm "$tmpfile"
 					break
 				fi
@@ -544,7 +545,7 @@ source_pkg() { #{{{
 				verbose_printf $"Trying: %s\n" "$pkg_file"
 				if [[ -f "$pkg_file" ]]; then
 					verbose_printf $"Source:"" ${Cgrn}%s${Crst}\n" "$pkg_file"
-					source_pkg_file "$pkg_file"
+					source_pkg_file "$pkg_name" "$pkg_file"
 					break
 				fi
 				;;
@@ -808,7 +809,7 @@ pkg_install() { #{{{
 			fi
 
 			# Not satisfied and not a dummy, resolve this by trying to install
-			# the suggested package.
+			# the suggested package metapkg.
 			msg_printf $"Metapackage: %s -> %s\n" "$next_pkg_name" "$metapkg"
 			next_pkg_name="$metapkg"
 		done
@@ -1196,33 +1197,61 @@ cmd_remove() { #{{{
 # cmd_avail
 #
 cmd_avail() { #{{{
-	local o_IFS="$IFS" ; IFS="$URL_SEP"
+	if (( $# == 0 )); then
+		local o_IFS="$IFS" ; IFS="$URL_SEP"
+		local repo_url
+		for repo_url in $PKGIX_REPO_URLS; do
+			(( ! arg_quiet )) && printf -- "${CbluB}-> ${CgrnB}${repo_url}${Crst}\n" || :
+			case "$repo_url" in
+				http://*|https://*|ftp://*)
+					msg_printf $"Listing packages for a HTTP repository is not supported!\n"
+					;;
+				*)
+					# Don't show hidden files
+					find_printbase "$repo_url" \( -type f -o -type l \) -a ! -name ".*" 2> /dev/null | sort |
+					while read pkg_name; do
+						if (( arg_quiet )); then
+							echo "$repo_url $pkg_name"
+						else
+							if is_pkg_pointer "${repo_url}/$pkg_name"; then
+								printf "%-42s %-18s %s\n" "$pkg_name" "->" "$(<"${repo_url}/$pkg_name")"
+							else
+								(
+									source "${repo_url}/$pkg_name"
+									printf "%-42s %-18s %s\n" "$pkg_name" "${version:-}" "${description:-}"
+								)
+							fi
+						fi
+					done
+					;;
+			esac
+		done
 
-	local repo_url
-	for repo_url in $PKGIX_REPO_URLS; do
-		printf -- "${CbluB}-> ${CgrnB}${repo_url}${Crst}\n"
-		case "$repo_url" in
-			http://*|https://*|ftp://*)
-				msg_printf $"Listing packages for a HTTP repository is not supported!\n"
-				;;
-			*)
-				# Don't show hidden files
-				find_printbase "$repo_url" \( -type f -o -type l \) -a ! -name ".*" 2> /dev/null | sort |
-				while read pkg_name; do
-					if is_pkg_pointer "${repo_url}/$pkg_name"; then
-						printf "%-42s %-18s %s\n" "$pkg_name" "->" "$(<"${repo_url}/$pkg_name")"
+		IFS="$o_IFS"
+	else
+		local pkg_name
+		for pkg_name in "$@"; do
+			(
+				if source_pkg "$pkg_name"; then
+					echo "$pkg_name (${version:-}): ${repo_url}"
+					echo " Description  : ${description:-}"
+					if [[ -z "${metapkg:-}" ]]; then
+						echo " Website      : ${website:-}"
+						echo " License      : ${license[*]:+${license[*]}}"
+						echo " Depends      : ${depends[*]:+${depends[*]}}"
 					else
-						(
-							source "${repo_url}/$pkg_name"
-							printf "%-42s %-18s %s\n" "$pkg_name" "${version:-}" "${description:-}"
-						)
+						if [[ "$metapkg" != "$METAPKG_DUMMY" ]]; then
+							echo " Metapackage -> $metapkg"
+						fi
 					fi
-				done
-				;;
-		esac
-	done
+				else
+					msg_printf $"'%s' not found!\n" "$pkg_name"
+				fi
 
-	IFS="$o_IFS"
+				echo
+			)
+		done
+	fi
 } #}}}
 
 #============================================================================
@@ -1313,7 +1342,7 @@ cmd_show() { #{{{
 		done
 
 		if [[ -z "$db_prefix" ]]; then
-			error_printf $"'%s' was not found!\n" "$pkg_name"
+			error_printf $"'%s' not found!\n" "$pkg_name"
 			exit $EXIT_ERR
 		fi
 
