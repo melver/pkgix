@@ -1464,7 +1464,8 @@ reset_traps() { #{{{
 
 reset_traps
 
-# Get command line options
+#============================================================================
+# Get global options
 arg_verbose=0
 arg_quiet=0
 arg_noconfirm=0
@@ -1490,9 +1491,51 @@ while :; do
 done
 
 sanitize_repo_urls
-
 cmd="${1:-}"
 shift || :
+
+#============================================================================
+# run_cmd
+# command wrapper
+#
+run_cmd() { #{{{
+	case "$cmd" in
+		install|remove)
+			if [[ -z "${PKGIX_ROOT:-}" ]]; then
+				cmd_$cmd "$@"
+			else
+				# Commands which can only accept one root, pass first one only
+				# Remove leading ':'
+				local args_root="${PKGIX_ROOT##:}"
+				cmd_$cmd "${args_root%%:*}" "$@"
+			fi
+			;;
+		upgrade|list|show|showenv|chenv)
+			if [[ -z "${PKGIX_ROOT:-}" ]]; then
+				cmd_$cmd "$@"
+			else
+				local o_IFS="$IFS" ; IFS=":"
+				local args_root=(${PKGIX_ROOT[@]})
+				IFS="$o_IFS" ; unset o_IFS
+
+				case "$cmd" in
+					show) cmd_$cmd "${args_root[@]}" -- "$@" ;;
+					*)    cmd_$cmd "${args_root[@]}" "$@" ;;
+				esac
+			fi
+			;;
+		avail)
+			cmd_$cmd "$@"
+			;;
+		*)
+			error_printf $"Unknown command: %s\n" "$cmd"
+			exit $EXIT_ERR
+			;;
+	esac
+} #}}}
+
+#============================================================================
+# Get command specific options
 case "$cmd" in
 	install|upgrade)
 		arg_force=0
@@ -1515,7 +1558,8 @@ case "$cmd" in
 			shift
 		done
 
-		;;& # Evaluate next statements!
+		run_cmd "$@"
+		;;
 	remove)
 		arg_purge=0
 
@@ -1527,7 +1571,8 @@ case "$cmd" in
 			shift
 		done
 
-		;;&
+		run_cmd "$@"
+		;;
 	show)
 		arg_list_files=0
 
@@ -1538,33 +1583,11 @@ case "$cmd" in
 			esac
 			shift
 		done
-		;;&
-	install|remove)
-		if [[ -z "${PKGIX_ROOT:-}" ]]; then
-			cmd_$cmd "$@"
-		else
-			# Commands which can only accept one root, pass first one only
-			# Remove leading ':'
-			args_root="${PKGIX_ROOT##:}"
-			cmd_$cmd "${args_root%%:*}" "$@"
-		fi
-		;;
-	upgrade|list|show|showenv|chenv)
-		if [[ -z "${PKGIX_ROOT:-}" ]]; then
-			cmd_$cmd "$@"
-		else
-			o_IFS="$IFS" ; IFS=":"
-			args_root=(${PKGIX_ROOT[@]})
-			IFS="$o_IFS" ; unset o_IFS
 
-			case "$cmd" in
-				show) cmd_$cmd "${args_root[@]}" -- "$@" ;;
-				*)    cmd_$cmd "${args_root[@]}" "$@" ;;
-			esac
-		fi
+		run_cmd "$@"
 		;;
-	avail)
-		cmd_$cmd "$@"
+	list|showenv|chenv|avail)
+		run_cmd "$@"
 		;;
 	help)
 		case "${1:-}" in
