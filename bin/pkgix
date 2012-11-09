@@ -842,6 +842,11 @@ pkg_install() { #{{{
 			warning_printf $"Ignoring dependencies.\n"
 		fi
 
+		if (( arg_dry_run )); then
+			msg_printf "${CgrnB}%s (%s)${Crst} "$"dry install complete.\n" "$pkg_name" "${version:-}"
+			exit $EXIT_OK
+		fi
+
 		msg_printf "${Cgrn}%s (%s)${Crst} "$"building...\n" "$pkg_name" "${version:-}"
 
 		local build_dir
@@ -1495,6 +1500,7 @@ case "$cmd" in
 		arg_reinstall=0
 		arg_keep_build_dir=0
 		arg_ignore_checksums=0
+		arg_dry_run=0
 
 		while :; do
 			case "${1:-}" in
@@ -1502,6 +1508,7 @@ case "$cmd" in
 				-d|--nodeps) arg_nodeps=1 ;;
 				-r|--reinstall) arg_reinstall=1 ;;
 				-k|--keep-build-dir) arg_keep_build_dir=1 ;;
+				-D|--dry) arg_dry_run=1 ;;
 				--ignore-checksums) arg_ignore_checksums=1 ;;
 				*) break ;;
 			esac
@@ -1589,6 +1596,10 @@ case "$cmd" in
 				printf -- $"\
     -k, --keep-build-dir\n\
         Keeps the build directory.\n"
+				printf -- $"\
+    -D, --dry\n\
+        Dry run only; do not install or upgrade anything.\n\
+        Useful to show what would be installed, including dependencies.\n"
 				printf -- $"\
     --ignore-checksums\n\
         Ignores checksums for remotely fetched files.\n"
