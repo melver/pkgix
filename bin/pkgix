@@ -1380,9 +1380,13 @@ sanitize_repo_urls() { #{{{
 	IFS="$o_IFS"
 } #}}}
 
+#============================================================================
+# prog_usage
+# Use *spaces* to indent printed text!!
+#
 prog_usage() { #{{{
-	printf -- $"Usage: %s [-r|--repo-urls] [-n|--noconfirm] [-v|--verbose] [--debug]\n" "$PROGNAME"
-	printf -- $"             <command> [<args>]\n"
+	printf -- $"Usage: %s [-r|--repo-urls] [-n|--noconfirm] [-v|--verbose] [--debug]\n\
+             <command> [<args>]\n" "$PROGNAME"
 	echo
 	printf -- $"Commands available:\n"
 	printf -- $"    install    Install a package in a prefix environment\n"
@@ -1395,23 +1399,30 @@ prog_usage() { #{{{
 	printf -- $"    chenv      Switch to a prefix environment\n"
 	echo
 	printf -- $"Options:\n"
-	printf -- $"   -r, --repo-urls\n"
-	printf -- $"       Specify additional package repository URL; use '%s' to\n" "$URL_SEP"
-	printf -- $"       separate multiple repositories. Currently supported protocols are:\n"
-	printf -- $"           file:// (default), http://, https://, ftp://\n"
-	printf -- $"   -n, --noconfirm\n"
-	printf -- $"       Proceed without asking the user for confirmation.\n"
-	printf -- $"   -v, --verbose\n"
-	printf -- $"       Be more verbose.\n"
-	printf -- $"   -q, --quiet\n"
-	printf -- $"       Be less verbose; some commands can show less information,\n"
-	printf -- $"       which makes their output more easily parsable by other tools.\n"
-	printf -- $"   -d, --debug\n"
-	printf -- $"       Debug mode: enable nounset for package files\n"
-	printf -- $"   -h, --help\n"
-	printf -- $"       Display this help message.\n"
-	printf -- $"   -V, --version\n"
-	printf -- $"       Display version information.\n"
+	printf -- $"\
+    -r, --repo-urls\n\
+        Specify additional package repository URL; use '%s' to\n\
+        separate multiple repositories. Currently supported protocols are:\n\
+        file:// (default), http://, https://, ftp://\n" "$URL_SEP"
+	printf -- $"\
+    -n, --noconfirm\n\
+        Proceed without asking the user for confirmation.\n"
+	printf -- $"\
+    -v, --verbose\n\
+        Be more verbose.\n"
+	printf -- $"\
+    -q, --quiet\n\
+        Be less verbose; some commands can show less information,\n\
+        which makes their output more easily parsable by other tools.\n"
+	printf -- $"\
+    -d, --debug\n\
+        Debug mode: enable nounset for package files\n"
+	printf -- $"\
+    -h, --help\n\
+        Display this help message.\n"
+	printf -- $"\
+    -V, --version\n\
+        Display version information.\n"
 	echo
 	printf -- $"See '%s help <command>' for more information on a command.\n" "$PROGNAME"
 } #}}}
@@ -1551,8 +1562,8 @@ case "$cmd" in
 	help)
 		case "${1:-}" in
 			install|upgrade)
-				printf -- $"Usage: %s %s [-f|--force] [-d|--nodeps] [-r|--reinstall]\n" "$PROGNAME" "$1"
-				printf -- $"                     [-k|--keep-build-dir] [--ignore-checksums]\n"
+				printf -- $"Usage: %s %s [-f|--force] [-d|--nodeps] [-r|--reinstall]\n\
+                     [-k|--keep-build-dir] [--ignore-checksums]\n" "$PROGNAME" "$1"
 
 				if [[ "$1" == "install" ]]; then
 					printf -- $"                     <pkgix-root> <pkgs>...\n"
@@ -1562,40 +1573,52 @@ case "$cmd" in
 
 				echo
 				printf -- $"Options:\n"
-				printf -- $"    -f, --force\n"
-				printf -- $"        Force installation of programs that are: already available outside of\n"
-				printf -- $"        <pkgix-roots>; satisfied metapackages; incompatible with the current system;\n"
-				printf -- $"        conflicting with already installed files.\n"
-				printf -- $"        Also forces overwriting files which were normally preserved (see backup).\n"
-				printf -- $"    -d, --nodeps\n"
-				printf -- $"        Ignore dependenciy check and do not install dependencies.\n"
-				printf -- $"    -r, --reinstall\n"
-				printf -- $"        Reinstall non-dependency, explicitly selected packages. When upgrading,\n"
-				printf -- $"        reinstall all installed packages.\n"
-				printf -- $"    -k, --keep-build-dir\n"
-				printf -- $"        Keeps the build directory.\n"
-				printf -- $"    --ignore-checksums\n"
-				printf -- $"        Ignores checksums for remotely fetched files.\n"
+				printf -- $"\
+    -f, --force\n\
+        Force installation of programs that are: already available outside of\n\
+        <pkgix-roots>; satisfied metapackages; incompatible with the current system;\n\
+        conflicting with already installed files.\n\
+        Also forces overwriting files which were normally preserved (see backup).\n"
+				printf -- $"\
+    -d, --nodeps\n\
+        Ignore dependenciy check and do not install dependencies.\n"
+				printf -- $"\
+    -r, --reinstall\n\
+        Reinstall non-dependency, explicitly selected packages. When upgrading,\n\
+        reinstall all installed packages.\n"
+				printf -- $"\
+    -k, --keep-build-dir\n\
+        Keeps the build directory.\n"
+				printf -- $"\
+    --ignore-checksums\n\
+        Ignores checksums for remotely fetched files.\n"
 				;;
 			remove)
 				printf -- $"Usage: %s %s [-P|--purge]\n" "$PROGNAME" "$1"
 				echo
 				printf -- $"Options:\n"
-				printf -- $"    -P, --purge\n"
-				printf -- $"        Force removal of all installed files, even those marked for backup.\n"
+				printf -- $"\
+    -P, --purge\n\
+        Force removal of all installed files, even those marked for backup.\n"
 				;;
 			show)
 				printf -- $"Usage: %s %s [-l|--list] (<pkgix-roots>... --|<pkgix-root>) <pkgs>...\n" "$PROGNAME" "$1"
 				echo
 				printf -- $"Options:\n"
-				printf -- $"    -l, --list\n"
-				printf -- $"        List installed package files.\n"
+				printf -- $"\
+    -l, --list\n\
+        List installed package files.\n"
 				;;
 			list|showenv|chenv)
 				printf -- $"Usage: %s %s <pkgix-roots>...\n" "$PROGNAME" "$1"
 				;;
 			avail)
-				printf -- $"No further information available.\n"
+				printf -- $"Usage: %s %s [<pkgs>...]\n" "$PROGNAME" "$1"
+				echo
+				printf -- $"\
+If a list of <pkgs> is provided, displays detailed information about the\n\
+packages found; otherwise, a short list of all packages in available\n\
+repositories is displayed.\n"
 				;;
 			help)
 				printf -- $"Usage: %s %s <command>\n" "$PROGNAME" "$1"
