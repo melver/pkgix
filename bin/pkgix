@@ -1347,8 +1347,8 @@ trap_ERR() {
 }
 
 reset_traps() {
-	trap '{ msg_printf "TERM signal caught, exiting...\n"; exit 42; }' TERM HUP QUIT
-	trap '{ msg_printf "User aborted.\n"; exit 42; }' INT
+	trap '{ msg_printf $"TERM signal caught, exiting...\n"; exit 42; }' TERM HUP QUIT
+	trap '{ msg_printf $"User aborted.\n"; exit 42; }' INT
 	trap 'trap_ERR "$?" "$LINENO" "$BASH_COMMAND" "${FUNCNAME[@]:+${FUNCNAME[@]}}"' ERR
 }
 
