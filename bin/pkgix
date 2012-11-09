@@ -402,53 +402,65 @@ export_env() { #{{{
 
 	verbose_printf $"Exporting environment: %s\n" "$pkgix_root"
 
-	# Prepending to PATH
-	export PATH="${pkgix_root}/bin:${PATH:-}"
-	export PATH="${pkgix_root}/sbin:${PATH:-}"
+	local base_path
+	local library_path
+	for base_path in "${pkgix_root}" "${pkgix_root}/usr"; do
 
-	local library_path="${pkgix_root}/lib"
+		library_path="${base_path}/lib"
 
-	# Don't necessarily want lib64/lib32 on the path, especially if the setup is pure,
-	# therefore check and only add them if they exist.
-	local libdir
-	for libdir in lib64 lib32; do
-		if [[ -d "${pkgix_root}/${libdir}" ]]; then
-			library_path+=":${pkgix_root}/${libdir}"
+		# Don't necessarily want lib64 or lib32 on the path, especially if the setup is pure,
+		# therefore check and only add them if they exist.
+		local libdir
+		for libdir in lib64 lib32; do
+			if [[ -d "${base_path}/${libdir}" ]]; then
+				library_path+=":${base_path}/${libdir}"
+			fi
+		done
+
+		# LD_LIBRARY_PATH is harmful, as it makes programs from the system use
+		# the libraries found in $base_path/lib, which can result in strange
+		# behaviour.
+		# For more info: http://xahlee.info/UnixResource_dir/_/ldpath.html
+
+		# Instead, make programs include the correct search path when they are
+		# compiled (--rpath).
+		if [[ -z "${LD_RUN_PATH:-}" ]]; then
+			export LD_RUN_PATH="${library_path}"
+		else
+			export LD_RUN_PATH="${library_path}:$LD_RUN_PATH"
 		fi
+
+		# LD_RUN_PATH needs to be set for compilation even if the path does
+		# not exist yet, as a package might install its own library in a
+		# non-existent base-path and this needs to be encoded in the binaries;
+		# the other variables are only useful if the paths they refer to exist.
+		[[ ! -d "$base_path" ]] && continue || :
+
+		# Prepending to PATH
+		export PATH="${base_path}/bin:${PATH:-}"
+		export PATH="${base_path}/sbin:${PATH:-}"
+
+		# And make the linker look in the right paths (-L)
+		if [[ -z "${LIBRARY_PATH:-}" ]]; then
+			export LIBRARY_PATH="${library_path}"
+		else
+			export LIBRARY_PATH="${library_path}:$LIBRARY_PATH"
+		fi
+
+		if [[ -z "${PKG_CONFIG_PATH:-}" ]]; then
+			export PKG_CONFIG_PATH="${base_path}/lib/pkgconfig"
+		else
+			export PKG_CONFIG_PATH="${base_path}/lib/pkgconfig:$PKG_CONFIG_PATH"
+		fi
+
+		# C/C++ preprocessor search paths (-I)
+		if [[ -z "${CPATH:-}" ]]; then
+			export CPATH="${base_path}/include"
+		else
+			export CPATH="${base_path}/include:$CPATH"
+		fi
+
 	done
-
-	# LD_LIBRARY_PATH is harmful, as it makes programs from the system use
-	# the libraries found in $pkgix_root/lib, which is certainly not
-	# considered stable.
-	# For more info: http://xahlee.info/UnixResource_dir/_/ldpath.html
-
-	# Instead, make programs include the correct search path when they are
-	# compiled (--rpath).
-	if [[ -z "${LD_RUN_PATH:-}" ]]; then
-		export LD_RUN_PATH="${library_path}"
-	else
-		export LD_RUN_PATH="${library_path}:$LD_RUN_PATH"
-	fi
-
-	# And make the linker look in the right paths (-L)
-	if [[ -z "${LIBRARY_PATH:-}" ]]; then
-		export LIBRARY_PATH="${library_path}"
-	else
-		export LIBRARY_PATH="${library_path}:$LIBRARY_PATH"
-	fi
-
-	if [[ -z "${PKG_CONFIG_PATH:-}" ]]; then
-		export PKG_CONFIG_PATH="${pkgix_root}/lib/pkgconfig"
-	else
-		export PKG_CONFIG_PATH="${pkgix_root}/lib/pkgconfig:$PKG_CONFIG_PATH"
-	fi
-
-	# C/C++ preprocessor search paths (-I)
-	if [[ -z "${CPATH:-}" ]]; then
-		export CPATH="${pkgix_root}/include"
-	else
-		export CPATH="${pkgix_root}/include:$CPATH"
-	fi
 
 	return $RET_OK
 } #}}}
