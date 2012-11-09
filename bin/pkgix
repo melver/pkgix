@@ -67,6 +67,11 @@ readonly RET_OK RET_ERR RET_INVALID_OPTION RET_USER_ABORT
 # PKGIX_BUILD_DIR: If set, uses ${PKGIX_BUILD_DIR}/{pkgix-build,pkgix-install}
 #	to build packages in, instead of default <prefix-root>/{.pkgix-build,.pkgix-install}.
 
+# Setup gettext ($"...")
+# Need to set TEXTDOMAIN first, then TEXTDOMAINDIR -- see BASH 4.2 source
+TEXTDOMAIN="$PROGNAME"
+TEXTDOMAINDIR="$(cd "${0%/*}"/.. && pwd)/share/locale"
+
 ##
 # Color config
 #
@@ -143,11 +148,11 @@ verbose_printf() {
 }
 
 error_printf() {
-	msg_printf "${Cred}ERROR:${Crst} ""$@"
+	msg_printf "${Cred}"$"ERROR:""${Crst} ""$@"
 }
 
 warning_printf() {
-	msg_printf "${Cylw}WARNING:${Crst} ""$@"
+	msg_printf "${Cylw}"$"WARNING:""${Crst} ""$@"
 }
 
 ##
@@ -155,7 +160,7 @@ warning_printf() {
 #
 if [[ -n "${PKGIX_BUILD_DIR:-}" ]]; then
 	if [[ ! -d "$PKGIX_BUILD_DIR" ]]; then
-		error_printf "PKGIX_BUILD_DIR='%s' not a valid directory!\n" "$PKGIX_BUILD_DIR"
+		error_printf $"PKGIX_BUILD_DIR='%s' is not a valid directory!\n" "$PKGIX_BUILD_DIR"
 		exit $EXIT_ERR
 	fi
 
@@ -218,7 +223,7 @@ lock_root() {
 	local pkgix_root="$(cd "$1" && pwd)"
 	local lock_file="${pkgix_root}/${LOCK_FILE}"
 	if [[ -f "$lock_file" ]]; then
-		error_printf "%s exists!\n" "$lock_file"
+		error_printf $"%s exists!\n" "$lock_file"
 		return $RET_ERR
 	fi
 
@@ -245,7 +250,7 @@ extract_archive() {
 	local archive_name="${1:-}"
 
 	if [[ -f "$archive_name" ]] ; then
-		msg_printf "Extracting '%s'...\n" "$archive_name"
+		msg_printf $"Extracting '%s'...\n" "$archive_name"
 
 		case "$archive_name" in
 			*.tar.bz2)  tar xjf "$archive_name"   ;;
@@ -262,10 +267,10 @@ extract_archive() {
 			*.zip)      unzip "$archive_name"      ;;
 			*.Z)        uncompress "$archive_name" ;;
 			*.7z)       7z x "$archive_name"       ;;
-			*)          error_printf "'%s' cannot be extracted (format unknown) !\n" "$archive_name" ; exit $EXIT_ERR ;;
+			*)          error_printf $"'%s' cannot be extracted (unknown format)!\n" "$archive_name" ; exit $EXIT_ERR ;;
 		esac
 	else
-		error_printf "'%s' is not a valid file !\n" "$archive_name"
+		error_printf $"'%s' is not a valid file !\n" "$archive_name"
 		exit $EXIT_ERR
 	fi
 }
@@ -280,24 +285,24 @@ fetch() {
 	local file_name="${3:-${url##*/}}"
 
 	if [[ -z "$url" ]]; then
-		error_printf "Invalid URL\n"
+		error_printf $"Invalid URL\n"
 		exit $EXIT_ERR
 	fi
 
 	if [[ ! -f "$file_name" ]]; then
 		if [[ "$url" =~ ^/ ]]; then
 			# Is a local path, just copy
-			msg_printf "Copying '%s'...\n" "$url"
+			msg_printf $"Copying '%s'...\n" "$url"
 			if ! cp "$url" "$file_name" &> /dev/null; then
-				error_printf "Copying '%s' failed!\n" "$url"
+				error_printf $"Copying '%s' failed!\n" "$url"
 				exit $EXIT_ERR
 			fi
 		else
 			local fetch_cmd
 			printf -v fetch_cmd "$PKGIX_FETCH" "$file_name"
-			msg_printf "Fetching '%s'...\n" "$url"
+			msg_printf $"Fetching '%s'...\n" "$url"
 			if ! $fetch_cmd "$url"; then
-				error_printf "Fetching '%s' failed!\n" "$url"
+				error_printf $"Fetching '%s' failed!\n" "$url"
 				exit $EXIT_ERR
 			fi
 		fi
@@ -310,20 +315,20 @@ fetch() {
 	if [[ -n "$checksum_sha256" ]]; then
 		if (( ! arg_ignore_checksums )); then
 			if [[ "$file_checksum_sha256" != "$checksum_sha256" ]]; then
-				error_printf "Checksum of '%s' (%s)\n    does not match (%s)!\n" "$file_name" "$file_checksum_sha256" "$checksum_sha256"
+				error_printf $"Checksum of '%s' (%s)\n    does not match (%s)!\n" "$file_name" "$file_checksum_sha256" "$checksum_sha256"
 				exit $EXIT_ERR
 			else
-				msg_printf "Valid checksum: %s\n" "$file_name"
+				msg_printf $"Valid checksum: %s\n" "$file_name"
 			fi
 		else
-			warning_printf "Ignoring checksum for '%s'...\n" "$file_name"
+			warning_printf $"Ignoring checksum for '%s'...\n" "$file_name"
 		fi
 	else
 		if (( ! arg_ignore_checksums )); then
-			error_printf "No checksum for '%s' (%s)!\n" "$file_name" "$file_checksum_sha256"
+			error_printf $"No checksum for '%s' (%s)!\n" "$file_name" "$file_checksum_sha256"
 			exit $EXIT_ERR
 		else
-			warning_printf "No checksum for '%s' (%s)!\n" "$file_name" "$file_checksum_sha256"
+			warning_printf $"No checksum for '%s' (%s)!\n" "$file_name" "$file_checksum_sha256"
 		fi
 	fi
 }
@@ -364,11 +369,11 @@ prompt_continue() {
 
 	local answer
 
-	printf "${CbluB}Continue ? [Y/n] ${Crst}"
+	printf "${CbluB}"$"Continue ?"" [Y/n] ${Crst}"
 	read answer
 
 	if [[ ! "$answer" =~ ^[yY]|^$ ]]; then
-		verbose_printf "User aborted.\n"
+		verbose_printf $"User aborted.\n"
 		return $RET_ERR
 	fi
 
@@ -395,7 +400,7 @@ export_env() {
 		export PKGIX_ROOT="$PKGIX_ROOT:${pkgix_root}"
 	fi
 
-	verbose_printf "Exporting environment: %s\n" "$pkgix_root"
+	verbose_printf $"Exporting environment: %s\n" "$pkgix_root"
 
 	# Prepending to PATH
 	export PATH="${pkgix_root}/bin:${PATH:-}"
@@ -497,11 +502,11 @@ source_pkg_file() {
 		local resolved_pkg_name="$(<$pkg_file)"
 
 		if [[ -z "${resolved_pkg_name:-}" ]]; then
-			error_printf "Empty package description file!\n"
+			error_printf $"Empty package description file!\n"
 			return $RET_ERR
 		fi
 
-		msg_printf "Points to %s\n" "$resolved_pkg_name"
+		msg_printf $"Points to %s\n" "$resolved_pkg_name"
 		source_pkg "$resolved_pkg_name"
 	else
 		source "$pkg_file"
@@ -526,9 +531,9 @@ source_pkg() {
 			http://*|https://*|ftp://*)
 				local tmpfile="$(mktemp)"
 
-				verbose_printf "Trying: %s\n" "$pkg_file"
+				verbose_printf $"Trying: %s\n" "$pkg_file"
 				if wget -q -O "$tmpfile" "$pkg_file"; then
-					verbose_printf "Source: ${Cgrn}%s${Crst}\n" "$pkg_file"
+					verbose_printf $"Source:"" ${Cgrn}%s${Crst}\n" "$pkg_file"
 					source_pkg_file "$tmpfile"
 					rm "$tmpfile"
 					break
@@ -536,9 +541,9 @@ source_pkg() {
 				rm "$tmpfile"
 				;;
 			*)
-				verbose_printf "Trying: %s\n" "$pkg_file"
+				verbose_printf $"Trying: %s\n" "$pkg_file"
 				if [[ -f "$pkg_file" ]]; then
-					verbose_printf "Source: ${Cgrn}%s${Crst}\n" "$pkg_file"
+					verbose_printf $"Source:"" ${Cgrn}%s${Crst}\n" "$pkg_file"
 					source_pkg_file "$pkg_file"
 					break
 				fi
@@ -575,7 +580,7 @@ sourced_pkg_call() {
 	local funcname=$1
 
 	if ! type -p $funcname > /dev/null; then
-		error_printf "Package file does not provide function: %s\n" "$funcname"
+		error_printf $"Package file does not provide function: %s\n" "$funcname"
 		exit $EXIT_ERR
 	fi
 
@@ -601,7 +606,7 @@ pkg_install() {
 	local is_reinstall=0
 
 	if [[ ! -d "$pkgix_root" ]]; then
-		error_printf "'%s' is not a valid directory!\n" "$pkgix_root"
+		error_printf $"'%s' is not a valid directory!\n" "$pkgix_root"
 		exit $EXIT_ERR
 	fi
 
@@ -609,7 +614,7 @@ pkg_install() {
 
 	if [[ -f "${db_prefix}/version" ]]; then
 		if (( ! reinstall )); then
-			msg_printf "${Cgrn}%s${Crst} is available\n" "$pkg_name"
+			msg_printf "${Cgrn}%s${Crst} "$"is available\n" "$pkg_name"
 			return $RET_OK
 		else
 			is_reinstall=1
@@ -641,7 +646,7 @@ pkg_install() {
 		local next_pkg_name="$pkg_name" # preserve requested package name
 		while :; do
 			if ! source_pkg "$next_pkg_name"; then
-				error_printf "Could not find valid package description file for '%s'!\n" "$next_pkg_name"
+				error_printf $"Could not find valid package description file for '%s'!\n" "$next_pkg_name"
 				exit $EXIT_ERR
 			fi
 
@@ -651,23 +656,23 @@ pkg_install() {
 			# Is metapackage, check if satisfied
 			if (( ! is_reinstall )) && sourced_pkg_call satisfied; then
 				if (( ! arg_force )); then
-					msg_printf "Metapackage '%s' satisfied.\n" "$next_pkg_name"
+					msg_printf $"Metapackage '%s' satisfied.\n" "$next_pkg_name"
 					exit $EXIT_OK
 				else
-					warning_printf "Forcing installation of metapackage '%s', despite satisfied...\n" "$next_pkg_name"
+					warning_printf $"Forcing installation of metapackage '%s', despite satisfied...\n" "$next_pkg_name"
 				fi
 			fi
 
 			# If this metapackage is only a dummy to check if a dependence is satisfied,
 			# and the above 'satisfied' function failed, this is a dead end.
 			if [[ "$metapkg" == "$METAPKG_DUMMY" ]]; then
-				error_printf "Metapackage '%s' could not be satisfied!\n" "$next_pkg_name"
+				error_printf $"Metapackage '%s' could not be satisfied!\n" "$next_pkg_name"
 				exit $EXIT_ERR
 			fi
 
 			# Not satisfied and not a dummy, resolve this by trying to install
 			# the suggested package.
-			msg_printf "Metapackage: %s -> %s\n" "$next_pkg_name" "$metapkg"
+			msg_printf $"Metapackage: %s -> %s\n" "$next_pkg_name" "$metapkg"
 			next_pkg_name="$metapkg"
 
 			# Unset meta package fields, before next iteration of source_pkg
@@ -682,33 +687,33 @@ pkg_install() {
 
 		if (( ! is_reinstall )) && sourced_pkg_call isinstalled; then
 			if (( ! arg_force )); then
-				msg_printf "'%s' already available outside of '%s', skipping...\n" "$pkg_name" "$pkgix_root"
+				msg_printf $"'%s' already available outside of '%s', skipping...\n" "$pkg_name" "$pkgix_root"
 				exit $EXIT_OK
 			else
-				msg_printf "Forcing installation of '%s', despite already available outside of '%s'...\n" "$pkg_name" "$pkgix_root"
+				msg_printf $"Forcing installation of '%s', despite already available outside of '%s'...\n" "$pkg_name" "$pkgix_root"
 			fi
 		fi
 
 		if ! sourced_pkg_call iscompat; then
 			if (( ! arg_force )); then
-				error_printf "'%s' is not compatible with your system!\n" "$pkg_name"
+				error_printf $"'%s' is not compatible with your system!\n" "$pkg_name"
 				exit $EXIT_ERR
 			else
-				warning_printf "Trying installation of '%s', despite system incompatibility...\n" "$pkg_name"
+				warning_printf $"Trying installation of '%s', despite system incompatibility...\n" "$pkg_name"
 			fi
 		fi
 
 		if (( ! arg_nodeps )); then
-			msg_printf "${Cgrn}%s (%s)${Crst} resolving dependencies...\n" "$pkg_name" "${version:-}"
+			msg_printf "${Cgrn}%s (%s)${Crst} "$"resolving dependencies...\n" "$pkg_name" "${version:-}"
 			local dep_name
 			for dep_name in "${depends[@]:+${depends[@]}}"; do
 				pkg_install "$pkgix_root" "$dep_name"
 			done
 		else
-			warning_printf "Ignoring dependencies.\n"
+			warning_printf $"Ignoring dependencies.\n"
 		fi
 
-		msg_printf "${Cgrn}%s (%s)${Crst} building...\n" "$pkg_name" "${version:-}"
+		msg_printf "${Cgrn}%s (%s)${Crst} "$"building...\n" "$pkg_name" "${version:-}"
 
 		local build_dir
 		local install_dir
@@ -734,14 +739,14 @@ pkg_install() {
 		trap "$trap_cmd" EXIT
 
 		if ! sourced_pkg_call build "$pkgix_root" "$install_dir"; then
-			error_printf "Building '%s' failed! Aborting.\n" "$pkg_name"
+			error_printf $"Building '%s' failed! Aborting.\n" "$pkg_name"
 			exit $EXIT_ERR
 		fi
 
-		msg_printf "${Cgrn}%s (%s)${Crst} installing into staging area...\n" "$pkg_name" "${version:-}"
+		msg_printf "${Cgrn}%s (%s)${Crst} "$"installing into staging area...\n" "$pkg_name" "${version:-}"
 
 		if ! sourced_pkg_call installenv "$pkgix_root" "$install_dir"; then
-			error_printf "Installation of '%s' failed! Aborting.\n" "$pkg_name"
+			error_printf $"Installation of '%s' failed! Aborting.\n" "$pkg_name"
 			exit $EXIT_ERR
 		fi
 
@@ -760,7 +765,7 @@ pkg_install() {
 			# As prefix is $pkgix_root, the complete folder structure from / is maintained inside $install_dir
 			find_printbase "${install_dir}/${pkgix_root}" > "$staging_files_file"
 		else
-			warning_printf "Package did not install any files.\n"
+			warning_printf $"Package did not install any files.\n"
 		fi
 
 		# Require files.backup file; can be empty.
@@ -785,7 +790,7 @@ pkg_install() {
 		local pkgnew_files_file="${build_dir}/.pkgnew.files"
 		: > "$pkgnew_files_file"
 		if (( ! arg_force )); then
-			msg_printf "${Cgrn}%s (%s)${Crst} checking for file conflicts...\n" "$pkg_name" "${version:-}"
+			msg_printf "${Cgrn}%s (%s)${Crst} "$"checking for file conflicts...\n" "$pkg_name" "${version:-}"
 
 			while read path; do
 				if [[ ! -d "${pkgix_root}/${path}" && -e "${pkgix_root}/${path}" ]]; then
@@ -796,19 +801,19 @@ pkg_install() {
 					if in_list "$path" "${backup[@]:+${backup[@]}}"; then
 						mv "${install_dir}/${pkgix_root}/${path}" "${install_dir}/${pkgix_root}/${path}.pkgnew"
 						echo "${path}.pkgnew" >> "$pkgnew_files_file"
-						warning_printf "Installing '%s' as '%s.pkgnew'\n" "$path" "$path"
+						warning_printf $"Installing '%s' as '%s'\n" "$path" "${path}.pkgnew"
 						continue
 					fi
 
-					error_printf "Conflict detected: %s\n" "$path"
+					error_printf $"Conflict detected: %s\n" "$path"
 					exit $EXIT_ERR
 				fi
 			done < "$staging_files_file"
 		else
-			warning_printf "Skipping file conflict check.\n"
+			warning_printf $"Skipping file conflict check.\n"
 		fi
 
-		msg_printf "${Cgrn}%s (%s)${Crst} installing...\n" "$pkg_name" "${version:-}"
+		msg_printf "${Cgrn}%s (%s)${Crst} "$"installing...\n" "$pkg_name" "${version:-}"
 
 		# Create installed database folders
 		mkdir -p "${db_prefix}"
@@ -832,14 +837,14 @@ pkg_install() {
 
 		# Run postinstall if available
 		if type -p postinstall > /dev/null; then
-			msg_printf "${Cgrn}%s (%s)${Crst} post-install...\n" "$pkg_name" "${version:-}"
+			msg_printf "${Cgrn}%s (%s)${Crst} "$"post-install...\n" "$pkg_name" "${version:-}"
 			if ! sourced_pkg_call postinstall "$pkgix_root"; then
-				warning_printf "Post-installation step failed!\n"
+				warning_printf $"Post-installation step failed!\n"
 			fi
 		fi
 
 		echo "${version:-}" > "${db_prefix}/version"
-		[[ -z "${version:-}" ]] && warning_printf "Empty 'version' field in package description file of '%s'!\n" "$pkg_name"
+		[[ -z "${version:-}" ]] && warning_printf $"Empty 'version' field in package description file of '%s'!\n" "$pkg_name"
 
 		{
 			echo "description=\"${description:-}\""
@@ -861,9 +866,9 @@ pkg_install() {
 			printf " )\n"
 		} > "${db_prefix}/info"
 
-		[[ -z "${description:-}" ]] && warning_printf "Empty 'description' field in package description file of '%s'!\n" "$pkg_name"
-		[[ -z "${license[*]:+${license[*]}}" ]] && warning_printf "Empty 'license' field in package description file of '%s'!\n" "$pkg_name"
-		[[ -z "${website:-}" ]] && warning_printf "Empty 'website' field in package description file of '%s'!\n" "$pkg_name"
+		[[ -z "${description:-}" ]] && warning_printf $"Empty 'description' field in package description file of '%s'!\n" "$pkg_name"
+		[[ -z "${license[*]:+${license[*]}}" ]] && warning_printf $"Empty 'license' field in package description file of '%s'!\n" "$pkg_name"
+		[[ -z "${website:-}" ]] && warning_printf $"Empty 'website' field in package description file of '%s'!\n" "$pkg_name"
 
 		# The db file is important for upgrading packages in the order they were installed!
 		# As the entries are not deleted upon removal, over time, a dependence ordering
@@ -877,8 +882,8 @@ pkg_install() {
 			echo "i|$pkg_name" >> "$db_file"
 		fi
 
-		msg_printf "${CgrnB}%s (%s)${Crst} successfully installed.\n" "$pkg_name" "${version:-}"
-		log_printf "$pkgix_root" "%s (%s) installed\n" "$pkg_name" "${version:-}"
+		msg_printf "${CgrnB}%s (%s)${Crst} "$"successfully installed.\n" "$pkg_name" "${version:-}"
+		log_printf "$pkgix_root" "%s (%s) "$"installed\n" "$pkg_name" "${version:-}"
 	) || exit $?
 
 	return $RET_OK
@@ -899,7 +904,7 @@ pkg_remove() {
 	local version="$(<"$version_file")"
 
 	if [[ ! -f "$files_file" ]]; then
-		error_printf "'%s' does not exist!\n" "$files_file"
+		error_printf $"'%s' does not exist!\n" "$files_file"
 		exit $EXIT_ERR
 	fi
 
@@ -908,7 +913,7 @@ pkg_remove() {
 		: > "$backup_file"
 	fi
 
-	msg_printf "${Cgrn}%s (%s)${Crst} removing...\n" "$pkg_name" "$version"
+	msg_printf "${Cgrn}%s (%s)${Crst} "$"removing...\n" "$pkg_name" "$version"
 
 	local backup_path
 	local backup_checksum_sha256
@@ -924,7 +929,7 @@ pkg_remove() {
 
 			# If file changed, exclude from deletion
 			if [[ "$backup_checksum_sha256" != "$backup_checksum_sha256_f" ]]; then
-				verbose_printf "Keeping modified '%s'\n" "$backup_path"
+				verbose_printf $"Keeping modified '%s'\n" "$backup_path"
 				echo "^${backup_path}$"
 			fi
 		else
@@ -966,8 +971,8 @@ pkg_remove() {
 	# Set package as removed
 	sed -i "s:^.|${pkg_name}$:r|${pkg_name}:" "${pkgix_root}/${DB_PREFIX}.db"
 
-	msg_printf "${CgrnB}%s (%s)${Crst} successfully removed.\n" "$pkg_name" "$version"
-	log_printf "$pkgix_root" "%s (%s) removed\n" "$pkg_name" "$version"
+	msg_printf "${CgrnB}%s (%s)${Crst} "$"successfully removed.\n" "$pkg_name" "$version"
+	log_printf "$pkgix_root" "%s (%s) "$"removed\n" "$pkg_name" "$version"
 }
 
 ##
@@ -975,7 +980,7 @@ pkg_remove() {
 #
 cmd_install() {
 	if [[ -z "${1:-}" ]]; then
-		error_printf "You need to specify a pkgix root!\n"
+		error_printf $"You need to specify a pkgix root!\n"
 		exit $EXIT_ERR
 	fi
 
@@ -983,13 +988,13 @@ cmd_install() {
 	shift
 
 	if [[ -z "${1:-}" ]]; then
-		error_printf "You need to specify at least one package to install.\n"
+		error_printf $"You need to specify at least one package to install.\n"
 		exit $EXIT_ERR
 	fi
 
 	if [[ ! -d "${pkgix_root}" ]]; then
 		if ! mkdir -p "${pkgix_root}" 2> /dev/null; then
-			error_printf "Could not create directory '%s'!\n" "$pkgix_root"
+			error_printf $"Could not create directory '%s'!\n" "$pkgix_root"
 			exit $EXIT_ERR
 		fi
 	fi
@@ -999,7 +1004,7 @@ cmd_install() {
 
 	lock_root "$pkgix_root" || exit $EXIT_ERR
 
-	msg_printf "Installing into %s: %s\n" "$pkgix_root" "$*"
+	msg_printf $"Installing into %s: %s\n" "$pkgix_root" "$*"
 
 	prompt_continue || exit $EXIT_USER_ABORT
 
@@ -1018,7 +1023,7 @@ root_upgrade() {
 	local pkgix_root="$1"
 
 	if [[ ! -f "${pkgix_root}/${DB_PREFIX}.db" ]]; then
-		warning_printf "'%s' is not a valid %s root!\n" "$pkgix_root" "$PROGNAME"
+		warning_printf $"'%s' is not a valid %s root!\n" "$pkgix_root" "$PROGNAME"
 		return $RET_INVALID_OPTION
 	fi
 
@@ -1027,7 +1032,7 @@ root_upgrade() {
 
 	lock_root "$pkgix_root" || exit $EXIT_ERR
 
-	msg_printf "Upgrading %s ...\n" "$pkgix_root"
+	msg_printf $"Upgrading %s ...\n" "$pkgix_root"
 
 	prompt_continue || return $RET_USER_ABORT
 
@@ -1037,7 +1042,7 @@ root_upgrade() {
 		local version_file="${pkgix_root}/${DB_PREFIX}/${pkg_name}/version"
 
 		if [[ ! -f "$version_file" ]]; then
-			warning_printf "Inconsistent database: no metadata for '%s'\n" "$pkg_name"
+			warning_printf $"Inconsistent database: no metadata for '%s'\n" "$pkg_name"
 			continue
 		fi
 
@@ -1045,20 +1050,20 @@ root_upgrade() {
 
 		(
 			if ! source_pkg "$pkg_name"; then
-				warning_printf "Could not find package description file for '%s', skipping upgrade...\n" "$pkg_name"
+				warning_printf $"Could not find package description file for '%s', skipping upgrade...\n" "$pkg_name"
 			elif [[ "${version:-}" != "$old_version" ]] || (( arg_reinstall )); then
-				msg_printf "${Cylw}Upgrading${Crst} %s (%s -> %s)" "$pkg_name" "$old_version" "${version:-}"
-				(( ! arg_reinstall )) && printf "\n" || printf " - reinstall\n"
-				log_printf "$pkgix_root" "upgrading %s (%s -> %s)\n" "$pkg_name" "$old_version" "${version:-}"
+				msg_printf "${Cylw}"$"Upgrading""${Crst} %s (%s -> %s)" "$pkg_name" "$old_version" "${version:-}"
+				(( ! arg_reinstall )) && printf "\n" || printf " - "$"reinstall\n"
+				log_printf "$pkgix_root" $"upgrading"" %s (%s -> %s)\n" "$pkg_name" "$old_version" "${version:-}"
 
 				pkg_install "$pkgix_root" "$pkg_name" 1
 			else
-				msg_printf "%s (%s) is up to date\n" "$pkg_name" "$old_version"
+				msg_printf "%s (%s) "$"is up to date\n" "$pkg_name" "$old_version"
 			fi
 		) || exit $?  # Break out of pipe-subshell
 	done || return $? # Take return code if pipe-subshell exited with errors
 
-	msg_printf "Done upgrading.\n"
+	msg_printf $"Done upgrading.\n"
 
 	unlock_root "$pkgix_root"
 }
@@ -1068,7 +1073,7 @@ root_upgrade() {
 #
 cmd_upgrade() {
 	if [[ -z "${1:-}" ]]; then
-		error_printf "You need to specify at least one pkgix root!\n"
+		error_printf $"You need to specify at least one pkgix root!\n"
 		exit $EXIT_ERR
 	fi
 
@@ -1089,10 +1094,10 @@ cmd_upgrade() {
 #
 cmd_remove() {
 	local pkgix_root="${1:-}"
-	shift || { error_printf "No targets specified!\n"; exit $EXIT_ERR; }
+	shift || { error_printf $"No targets specified!\n"; exit $EXIT_ERR; }
 
 	if [[ ! -d "$pkgix_root" ]]; then
-		error_printf "'%s' is not a valid directory!\n" "$pkgix_root"
+		error_printf $"'%s' is not a valid directory!\n" "$pkgix_root"
 		exit $EXIT_ERR
 	fi
 
@@ -1100,7 +1105,7 @@ cmd_remove() {
 
 	lock_root "$pkgix_root" || exit $EXIT_ERR
 
-	msg_printf "Removing from %s: %s\n" "$pkgix_root" "$*"
+	msg_printf $"Removing from %s: %s\n" "$pkgix_root" "$*"
 	prompt_continue || exit $EXIT_USER_ABORT
 	
 	local pkg_name
@@ -1122,7 +1127,7 @@ cmd_avail() {
 		printf -- "${CbluB}-> ${CgrnB}${repo_url}${Crst}\n"
 		case "$repo_url" in
 			http://*|https://*|ftp://*)
-				msg_printf "Listing packages for a HTTP repository is not supported!\n"
+				msg_printf $"Listing packages for a HTTP repository is not supported!\n"
 				;;
 			*)
 				# Don't show hidden files
@@ -1190,7 +1195,7 @@ cmd_show() {
 		pkgix_roots+=("${1:-}")
 	fi
 
-	shift || { error_printf "No targets specified!\n"; exit $EXIT_ERR; }
+	shift || { error_printf $"No targets specified!\n"; exit $EXIT_ERR; }
 
 	local pkg_name
 	local pkgix_root
@@ -1201,7 +1206,7 @@ cmd_show() {
 	for pkg_name in "$@"; do
 		for pkgix_root in "${pkgix_roots[@]}"; do
 			if [[ ! -d "$pkgix_root" ]]; then
-				error_printf "'%s' is not a valid directory!\n" "$pkgix_root"
+				error_printf $"'%s' is not a valid directory!\n" "$pkgix_root"
 				exit $EXIT_ERR
 			fi
 
@@ -1245,7 +1250,7 @@ cmd_show() {
 		done
 
 		if [[ -z "$db_prefix" ]]; then
-			error_printf "'%s' was not found!\n" "$pkg_name"
+			error_printf $"'%s' was not found!\n" "$pkg_name"
 			exit $EXIT_ERR
 		fi
 	done
@@ -1260,7 +1265,7 @@ cmd_chenv() {
 		export_env "$pkgix_root"
 	done
 
-	msg_printf "Spawning shell\n"
+	msg_printf $"Spawning shell\n"
 	exec "$PKGIX_SHELL"
 }
 
@@ -1282,39 +1287,39 @@ sanitize_repo_urls() {
 }
 
 prog_usage() {
-	printf -- "Usage: %s [-r|--repo-urls] [-n|--noconfirm] [-v|--verbose] [--debug]\n" "$PROGNAME"
-	printf -- "             <command> [<args>]\n"
+	printf -- $"Usage: %s [-r|--repo-urls] [-n|--noconfirm] [-v|--verbose] [--debug]\n" "$PROGNAME"
+	printf -- $"             <command> [<args>]\n"
 	echo
-	printf -- "Commands available:\n"
-	printf -- "    install    Install a package in a prefix environment\n"
-	printf -- "    remove     Remove an installed package\n"
-	printf -- "    upgrade    Upgrade a prefix environment\n"
-	printf -- "    avail      List packages available to install\n"
-	printf -- "    list       List installed packages\n"
-	printf -- "    show       Show information about installed packages\n"
-	printf -- "    showenv    Show prefix environment parameters\n"
-	printf -- "    chenv      Switch to a prefix environment\n"
+	printf -- $"Commands available:\n"
+	printf -- $"    install    Install a package in a prefix environment\n"
+	printf -- $"    remove     Remove an installed package\n"
+	printf -- $"    upgrade    Upgrade a prefix environment\n"
+	printf -- $"    avail      List packages available to install\n"
+	printf -- $"    list       List installed packages\n"
+	printf -- $"    show       Show information about installed packages\n"
+	printf -- $"    showenv    Show prefix environment parameters\n"
+	printf -- $"    chenv      Switch to a prefix environment\n"
 	echo
-	printf -- "Options:\n"
-	printf -- "   -r, --repo-urls\n"
-	printf -- "       Specify additional package repository URL; use '%s' to\n" "$URL_SEP"
-	printf -- "       separate multiple repositories. Currently supported protocols are:\n"
-	printf -- "           file:// (default), http://, https://, ftp://\n"
-	printf -- "   -n, --noconfirm\n"
-	printf -- "       Proceed without asking the user for confirmation.\n"
-	printf -- "   -v, --verbose\n"
-	printf -- "       Be more verbose.\n"
-	printf -- "   -q, --quiet\n"
-	printf -- "       Be less verbose; some commands can show less information,\n"
-	printf -- "       which makes their output more easily parsable by other tools.\n"
-	printf -- "   -d, --debug\n"
-	printf -- "       Debug mode: enable nounset for package files\n"
-	printf -- "   -h, --help\n"
-	printf -- "       Display this help message.\n"
-	printf -- "   -V, --version\n"
-	printf -- "       Display version information.\n"
+	printf -- $"Options:\n"
+	printf -- $"   -r, --repo-urls\n"
+	printf -- $"       Specify additional package repository URL; use '%s' to\n" "$URL_SEP"
+	printf -- $"       separate multiple repositories. Currently supported protocols are:\n"
+	printf -- $"           file:// (default), http://, https://, ftp://\n"
+	printf -- $"   -n, --noconfirm\n"
+	printf -- $"       Proceed without asking the user for confirmation.\n"
+	printf -- $"   -v, --verbose\n"
+	printf -- $"       Be more verbose.\n"
+	printf -- $"   -q, --quiet\n"
+	printf -- $"       Be less verbose; some commands can show less information,\n"
+	printf -- $"       which makes their output more easily parsable by other tools.\n"
+	printf -- $"   -d, --debug\n"
+	printf -- $"       Debug mode: enable nounset for package files\n"
+	printf -- $"   -h, --help\n"
+	printf -- $"       Display this help message.\n"
+	printf -- $"   -V, --version\n"
+	printf -- $"       Display version information.\n"
 	echo
-	printf -- "See '%s help <command>' for more information on a command.\n" "$PROGNAME"
+	printf -- $"See '%s help <command>' for more information on a command.\n" "$PROGNAME"
 }
 
 prog_version() {
@@ -1452,57 +1457,57 @@ case "$cmd" in
 	help)
 		case "${1:-}" in
 			install|upgrade)
-				printf -- "Usage: %s %s [-f|--force] [-d|--nodeps] [-r|--reinstall]\n" "$PROGNAME" "$1"
-				printf -- "                     [-k|--keep-build-dir] [--ignore-checksums]\n"
+				printf -- $"Usage: %s %s [-f|--force] [-d|--nodeps] [-r|--reinstall]\n" "$PROGNAME" "$1"
+				printf -- $"                     [-k|--keep-build-dir] [--ignore-checksums]\n"
 
 				if [[ "$1" == "install" ]]; then
-					printf -- "                     <pkgix-root> <pkgs>...\n"
+					printf -- $"                     <pkgix-root> <pkgs>...\n"
 				else
-					printf -- "                     <pkgix-roots>...\n"
+					printf -- $"                     <pkgix-roots>...\n"
 				fi
 
 				echo
-				printf -- "Options:\n"
-				printf -- "    -f, --force\n"
-				printf -- "        Force installation of programs that are: already available outside of\n"
-				printf -- "        <pkgix-roots>; satisfied metapackages; incompatible with the current system;\n"
-				printf -- "        conflicting with already installed files.\n"
-				printf -- "        Also forces overwriting files which were normally preserved (see backup).\n"
-				printf -- "    -d, --nodeps\n"
-				printf -- "        Ignore dependenciy check and do not install dependencies.\n"
-				printf -- "    -r, --reinstall\n"
-				printf -- "        Reinstall non-dependency, explicitly selected packages. When upgrading,\n"
-				printf -- "        reinstall all installed packages.\n"
-				printf -- "    -k, --keep-build-dir\n"
-				printf -- "        Keeps the build directory.\n"
-				printf -- "    --ignore-checksums\n"
-				printf -- "        Ignores checksums for remotely fetched files.\n"
+				printf -- $"Options:\n"
+				printf -- $"    -f, --force\n"
+				printf -- $"        Force installation of programs that are: already available outside of\n"
+				printf -- $"        <pkgix-roots>; satisfied metapackages; incompatible with the current system;\n"
+				printf -- $"        conflicting with already installed files.\n"
+				printf -- $"        Also forces overwriting files which were normally preserved (see backup).\n"
+				printf -- $"    -d, --nodeps\n"
+				printf -- $"        Ignore dependenciy check and do not install dependencies.\n"
+				printf -- $"    -r, --reinstall\n"
+				printf -- $"        Reinstall non-dependency, explicitly selected packages. When upgrading,\n"
+				printf -- $"        reinstall all installed packages.\n"
+				printf -- $"    -k, --keep-build-dir\n"
+				printf -- $"        Keeps the build directory.\n"
+				printf -- $"    --ignore-checksums\n"
+				printf -- $"        Ignores checksums for remotely fetched files.\n"
 				;;
 			remove)
-				printf -- "Usage: %s %s [-P|--purge]\n" "$PROGNAME" "$1"
+				printf -- $"Usage: %s %s [-P|--purge]\n" "$PROGNAME" "$1"
 				echo
-				printf -- "Options:\n"
-				printf -- "    -P, --purge\n"
-				printf -- "        Force removal of all installed files, even those marked for backup.\n"
+				printf -- $"Options:\n"
+				printf -- $"    -P, --purge\n"
+				printf -- $"        Force removal of all installed files, even those marked for backup.\n"
 				;;
 			show)
-				printf -- "Usage: %s %s [-l|--list] (<pkgix-roots>... --|<pkgix-root>) <pkgs>...\n" "$PROGNAME" "$1"
+				printf -- $"Usage: %s %s [-l|--list] (<pkgix-roots>... --|<pkgix-root>) <pkgs>...\n" "$PROGNAME" "$1"
 				echo
-				printf -- "Options:\n"
-				printf -- "    -l, --list\n"
-				printf -- "        List installed package files.\n"
+				printf -- $"Options:\n"
+				printf -- $"    -l, --list\n"
+				printf -- $"        List installed package files.\n"
 				;;
 			list|showenv|chenv)
-				printf -- "Usage: %s %s <pkgix-roots>...\n" "$PROGNAME" "$1"
+				printf -- $"Usage: %s %s <pkgix-roots>...\n" "$PROGNAME" "$1"
 				;;
 			avail)
-				printf -- "No further information available.\n"
+				printf -- $"No further information available.\n"
 				;;
 			help)
-				printf -- "Usage: %s %s <command>\n" "$PROGNAME" "$1"
+				printf -- $"Usage: %s %s <command>\n" "$PROGNAME" "$1"
 				;;
 			*)
-				printf -- "Please specify valid command.\n"
+				printf -- $"Please specify valid command.\n"
 				exit $EXIT_INVALID_OPTION
 				;;
 		esac
