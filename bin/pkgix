@@ -1449,46 +1449,136 @@ sanitize_repo_urls() { #{{{
 # Use *spaces* to indent printed text!!
 #
 prog_usage() { #{{{
-	printf -- $"Usage: %s [-r|--repo-urls] [-n|--noconfirm] [-v|--verbose] [--debug]\n\
+	if [[ -z "${1:-}" ]]; then
+		printf -- $"Usage: %s [-r|--repo-urls] [-n|--noconfirm] [-v|--verbose] [--debug]\n\
              <command> [<args>]\n" "$PROGNAME"
-	echo
-	printf -- $"Commands available:\n"
-	printf -- $"    install    Install a package in a prefix environment\n"
-	printf -- $"    remove     Remove an installed package\n"
-	printf -- $"    upgrade    Upgrade a prefix environment\n"
-	printf -- $"    avail      List packages available to install\n"
-	printf -- $"    list       List installed packages\n"
-	printf -- $"    show       Show information about installed packages\n"
-	printf -- $"    showenv    Show prefix environment parameters\n"
-	printf -- $"    chenv      Switch to a prefix environment\n"
-	echo
-	printf -- $"Options:\n"
-	printf -- $"\
+		echo
+		printf -- $"Commands available:\n"
+		printf -- $"    install    Install a package in a prefix environment\n"
+		printf -- $"    remove     Remove an installed package\n"
+		printf -- $"    upgrade    Upgrade a prefix environment\n"
+		printf -- $"    avail      List packages available to install\n"
+		printf -- $"    list       List installed packages\n"
+		printf -- $"    show       Show information about installed packages\n"
+		printf -- $"    showenv    Show prefix environment parameters\n"
+		printf -- $"    chenv      Switch to a prefix environment\n"
+		echo
+		printf -- $"Options:\n"
+		printf -- $"\
     -r, --repo-urls\n\
         Specify additional package repository URL; use '%s' to\n\
         separate multiple repositories. Currently supported protocols are:\n\
         file:// (default), http://, https://, ftp://\n" "$URL_SEP"
-	printf -- $"\
+		printf -- $"\
     -n, --noconfirm\n\
         Proceed without asking the user for confirmation.\n"
-	printf -- $"\
+		printf -- $"\
     -v, --verbose\n\
         Be more verbose.\n"
-	printf -- $"\
+		printf -- $"\
     -q, --quiet\n\
         Be less verbose; some commands can show less information,\n\
         which makes their output more easily parsable by other tools.\n"
-	printf -- $"\
+		printf -- $"\
     -d, --debug\n\
         Debug mode: enable nounset for package files\n"
-	printf -- $"\
+		printf -- $"\
     -h, --help\n\
         Display this help message.\n"
-	printf -- $"\
+		printf -- $"\
     -V, --version\n\
         Display version information.\n"
-	echo
-	printf -- $"See '%s help <command>' for more information on a command.\n" "$PROGNAME"
+		echo
+		printf -- $"See '%s help <command>' for more information on a command.\n" "$PROGNAME"
+	else
+		case "${1:-}" in
+			install|upgrade)
+				printf -- $"Usage: %s %s [-f|--force] [-d|--nodeps] [-r|--reinstall]\n\
+                     [-k|--keep-build-dir] [--ignore-checksums]\n" "$PROGNAME" "$1"
+
+				if [[ "$1" == "install" ]]; then
+					printf -- $"                     <pkgix-root> <pkgs>...\n"
+				else
+					printf -- $"                     <pkgix-roots>...\n"
+				fi
+
+				echo
+				printf -- $"Options:\n"
+				printf -- $"\
+    -f, --force\n\
+        Force installation of programs that are: already available outside of\n\
+        <pkgix-roots>; satisfied metapackages; incompatible with the current system;\n\
+        conflicting with already installed files.\n\
+        Also forces overwriting files which were normally preserved (see backup).\n"
+				printf -- $"\
+    -d, --nodeps\n\
+        Ignore dependenciy check and do not install dependencies.\n"
+				printf -- $"\
+    -r, --reinstall\n\
+        Reinstall non-dependency, explicitly selected packages. When upgrading,\n\
+        reinstall all installed packages.\n"
+				printf -- $"\
+    -k, --keep-build-dir\n\
+        Keeps the build directory.\n"
+				printf -- $"\
+    -D, --dry\n\
+        Dry run only; do not install or upgrade anything.\n\
+        Useful to show what would be installed, including dependencies.\n"
+				printf -- $"\
+    --ignore-checksums\n\
+        Ignores checksums for remotely fetched files.\n"
+				;;
+			remove)
+				printf -- $"Usage: %s %s [-P|--purge]\n" "$PROGNAME" "$1"
+				echo
+				printf -- $"Options:\n"
+				printf -- $"\
+    -P, --purge\n\
+        Force removal of all installed files, even those marked for backup.\n"
+				;;
+			show)
+				printf -- $"Usage: %s %s [-l|--list] (<pkgix-roots>... --|<pkgix-root>) <pkgs>...\n" "$PROGNAME" "$1"
+				echo
+				printf -- $"Options:\n"
+				printf -- $"\
+    -l, --list\n\
+        List installed package files.\n"
+				;;
+			list)
+				printf -- $"Usage: %s %s [-e|--explicit] [-d|--depends] [-u|--unrequired] <pkgix-roots>...\n" "$PROGNAME" "$1"
+				echo
+				printf -- $"Options:\n"
+				printf -- $"\
+    -e, --explicit\n\
+        List only explicitly installed packages.\n"
+				printf -- $"\
+    -d, --depends\n\
+        List only packages installed as a dependency for another package.\n"
+				printf -- $"\
+    -u, --unrequired\n\
+        List unrequired packages: packages not required by any other package;\n\
+        checks dependencies between all listed <pkgix-roots>.\n"
+				;;
+			showenv|chenv)
+				printf -- $"Usage: %s %s <pkgix-roots>...\n" "$PROGNAME" "$1"
+				;;
+			avail)
+				printf -- $"Usage: %s %s [<pkgs>...]\n" "$PROGNAME" "$1"
+				echo
+				printf -- $"\
+If a list of <pkgs> is provided, displays detailed information about the\n\
+packages found; otherwise, a short list of all packages in available\n\
+repositories is displayed.\n"
+				;;
+			help)
+				printf -- $"Usage: %s %s <command>\n" "$PROGNAME" "$1"
+				;;
+			*)
+				printf -- $"Please specify valid command.\n"
+				exit $EXIT_INVALID_OPTION
+				;;
+		esac
+	fi
 } #}}}
 
 prog_version() { #{{{
@@ -1666,93 +1756,7 @@ case "$cmd" in
 		run_cmd "$@"
 		;;
 	help)
-		case "${1:-}" in
-			install|upgrade)
-				printf -- $"Usage: %s %s [-f|--force] [-d|--nodeps] [-r|--reinstall]\n\
-                     [-k|--keep-build-dir] [--ignore-checksums]\n" "$PROGNAME" "$1"
-
-				if [[ "$1" == "install" ]]; then
-					printf -- $"                     <pkgix-root> <pkgs>...\n"
-				else
-					printf -- $"                     <pkgix-roots>...\n"
-				fi
-
-				echo
-				printf -- $"Options:\n"
-				printf -- $"\
-    -f, --force\n\
-        Force installation of programs that are: already available outside of\n\
-        <pkgix-roots>; satisfied metapackages; incompatible with the current system;\n\
-        conflicting with already installed files.\n\
-        Also forces overwriting files which were normally preserved (see backup).\n"
-				printf -- $"\
-    -d, --nodeps\n\
-        Ignore dependenciy check and do not install dependencies.\n"
-				printf -- $"\
-    -r, --reinstall\n\
-        Reinstall non-dependency, explicitly selected packages. When upgrading,\n\
-        reinstall all installed packages.\n"
-				printf -- $"\
-    -k, --keep-build-dir\n\
-        Keeps the build directory.\n"
-				printf -- $"\
-    -D, --dry\n\
-        Dry run only; do not install or upgrade anything.\n\
-        Useful to show what would be installed, including dependencies.\n"
-				printf -- $"\
-    --ignore-checksums\n\
-        Ignores checksums for remotely fetched files.\n"
-				;;
-			remove)
-				printf -- $"Usage: %s %s [-P|--purge]\n" "$PROGNAME" "$1"
-				echo
-				printf -- $"Options:\n"
-				printf -- $"\
-    -P, --purge\n\
-        Force removal of all installed files, even those marked for backup.\n"
-				;;
-			show)
-				printf -- $"Usage: %s %s [-l|--list] (<pkgix-roots>... --|<pkgix-root>) <pkgs>...\n" "$PROGNAME" "$1"
-				echo
-				printf -- $"Options:\n"
-				printf -- $"\
-    -l, --list\n\
-        List installed package files.\n"
-				;;
-			list)
-				printf -- $"Usage: %s %s [-e|--explicit] [-d|--depends] [-u|--unrequired] <pkgix-roots>...\n" "$PROGNAME" "$1"
-				echo
-				printf -- $"Options:\n"
-				printf -- $"\
-    -e, --explicit\n\
-        List only explicitly installed packages.\n"
-				printf -- $"\
-    -d, --depends\n\
-        List only packages installed as a dependency for another package.\n"
-				printf -- $"\
-    -u, --unrequired\n\
-        List unrequired packages: packages not required by any other package;\n\
-        checks dependencies between all listed <pkgix-roots>.\n"
-				;;
-			showenv|chenv)
-				printf -- $"Usage: %s %s <pkgix-roots>...\n" "$PROGNAME" "$1"
-				;;
-			avail)
-				printf -- $"Usage: %s %s [<pkgs>...]\n" "$PROGNAME" "$1"
-				echo
-				printf -- $"\
-If a list of <pkgs> is provided, displays detailed information about the\n\
-packages found; otherwise, a short list of all packages in available\n\
-repositories is displayed.\n"
-				;;
-			help)
-				printf -- $"Usage: %s %s <command>\n" "$PROGNAME" "$1"
-				;;
-			*)
-				printf -- $"Please specify valid command.\n"
-				exit $EXIT_INVALID_OPTION
-				;;
-		esac
+		prog_usage "$@"
 		;;
 	*)
 		prog_usage
