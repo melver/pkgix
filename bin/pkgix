@@ -1614,7 +1614,36 @@ reset_traps() { #{{{
 reset_traps
 
 #============================================================================
+# expand_short_opts opts arg
+# Sets global array expanded_short_opts
+#
+# Rewrites a block of short options into an array, which can then be used
+# to replace the current positional arguments with the expanded version
+# so that they can be parsed normally, while still allowing GNU-style
+# long options below.
+#
+expand_short_opts() { #{{{
+	OPTIND=1
+	expanded_short_opts=()
+
+	local opts="$1"
+	local arg="$2"
+
+	local opt
+	while getopts ":${opts}" opt "$arg"; do
+		case "$opt" in
+			:|\?)
+				prog_usage "${cmd:-}"
+				exit $EXIT_INVALID_OPTION
+				;;
+			*) expanded_short_opts+=("-$opt") ;;
+		esac
+	done
+} #}}}
+
+#============================================================================
 # Get global options
+#
 arg_verbose=0
 arg_quiet=0
 arg_noconfirm=0
@@ -1634,6 +1663,12 @@ while :; do
 		-d|--debug) arg_debug=1 ;;
 		-h|--help) prog_usage; exit $EXIT_OK ;;
 		-V|--version) prog_version; exit $EXIT_OK ;;
+		--) shift; break ;;
+		-*)
+			expand_short_opts "rvqndhV" "$1"
+			set -- "${expanded_short_opts[@]:+${expanded_short_opts[@]}}" "${@:2}"
+			continue
+			;;
 		*) break ;;
 	esac
 	shift
@@ -1702,6 +1737,12 @@ case "$cmd" in
 				-k|--keep-build-dir) arg_keep_build_dir=1 ;;
 				-D|--dry) arg_dry_run=1 ;;
 				--ignore-checksums) arg_ignore_checksums=1 ;;
+				--) shift; break ;;
+				-*)
+					expand_short_opts "fdrkD" "$1"
+					set -- "${expanded_short_opts[@]:+${expanded_short_opts[@]}}" "${@:2}"
+					continue
+					;;
 				*) break ;;
 			esac
 			shift
@@ -1715,6 +1756,12 @@ case "$cmd" in
 		while :; do
 			case "${1:-}" in
 				-P|--purge) arg_purge=1 ;;
+				--) shift; break ;;
+				-*)
+					expand_short_opts "P" "$1"
+					set -- "${expanded_short_opts[@]:+${expanded_short_opts[@]}}" "${@:2}"
+					continue
+					;;
 				*) break ;;
 			esac
 			shift
@@ -1728,6 +1775,12 @@ case "$cmd" in
 		while :; do
 			case "${1:-}" in
 				-l|--list) arg_list_files=1 ;;
+				--) shift; break ;;
+				-*)
+					expand_short_opts "l" "$1"
+					set -- "${expanded_short_opts[@]:+${expanded_short_opts[@]}}" "${@:2}"
+					continue
+					;;
 				*) break ;;
 			esac
 			shift
@@ -1745,6 +1798,12 @@ case "$cmd" in
 				-e|--explicit) arg_list_explicit=1 ;;
 				-d|--depends) arg_list_depends=1 ;;
 				-u|--unrequired) arg_list_unrequired=1 ;;
+				--) shift; break ;;
+				-*)
+					expand_short_opts "edu" "$1"
+					set -- "${expanded_short_opts[@]:+${expanded_short_opts[@]}}" "${@:2}"
+					continue
+					;;
 				*) break ;;
 			esac
 			shift
