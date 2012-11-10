@@ -635,9 +635,9 @@ unset_sourced_pkg() { #{{{
 } #}}}
 
 #============================================================================
-# pkg_isinstalled_db pkgix_root pkg_name
+# pkg_db_isinstalled pkgix_root pkg_name
 #
-pkg_isinstalled_db() { #{{{
+pkg_db_isinstalled() { #{{{
 	local pkgix_root="$1"
 	local pkg_name="$2"
 	local db_prefix="${pkgix_root}/${DB_PREFIX}/${pkg_name}"
@@ -670,9 +670,9 @@ unset_db_vars() { #{{{
 } #}}}
 
 #============================================================================
-# pkg_install_db pkgix_root pkg_name
+# pkg_db_install pkgix_root pkg_name
 #
-pkg_install_db() { #{{{
+pkg_db_install() { #{{{
 	local pkgix_root="$1"
 	local pkg_name="$2"
 	local reason="$3"
@@ -749,6 +749,43 @@ unset_db_info() { #{{{
 } #}}}
 
 #============================================================================
+# pkg_db_info_query pkgix_root pkg_name property [default]
+#
+# Only use this function to query a single property, as it would be inefficient
+# for querying multiple properties in sequence; for this source the db_info_file
+# and subsequently call unset_db_info.
+#
+# Only echos the property as a string, and should not be used if the property
+# type is an array.
+#
+pkg_db_info_query() {
+	local pkgix_root="$1"
+	local pkg_name="$2"
+	local property="$3"
+	local default="${4:-}"
+
+	(
+		local result
+
+		set_db_vars "$pkgix_root" "$pkg_name"
+
+		case "$property" in
+			version)
+				result="$(<"$db_version_file")"
+				[[ -z "$result" ]] && echo "$default" || echo "$result"
+				;;
+			*)
+				source "$db_info_file"
+				eval "echo \"\${${property}:-${default}}\""
+				unset_db_info
+				;;
+		esac
+
+		unset_db_vars
+	)
+}
+
+#============================================================================
 # db_list_installed
 #
 db_list_installed() { #{{{
@@ -759,7 +796,7 @@ db_list_installed() { #{{{
 		grep "^i|" "${pkgix_root}/${DB_PREFIX}.db" |
 		while read pkg_name; do
 			pkg_name="${pkg_name##i|}"
-			if ! pkg_isinstalled_db "$pkgix_root" "$pkg_name"; then
+			if ! pkg_db_isinstalled "$pkgix_root" "$pkg_name"; then
 				warning_printf $"Inconsistent database entry: %s\n" "$pkg_name"
 				continue
 			fi
@@ -770,7 +807,7 @@ db_list_installed() { #{{{
 } #}}}
 
 #============================================================================
-# pkg_install pkgix_root pkg_name [reinstall]
+# pkg_install pkgix_root pkg_name [reinstall [reason]]
 #
 pkg_install() { #{{{
 	local pkgix_root="$1"
@@ -784,12 +821,15 @@ pkg_install() { #{{{
 		exit $EXIT_ERR
 	fi
 
-	if pkg_isinstalled_db "$pkgix_root" "$pkg_name"; then
+	if pkg_db_isinstalled "$pkgix_root" "$pkg_name"; then
 		if (( ! reinstall )); then
 			msg_printf "${Cgrn}%s${Crst} "$"is available\n" "$pkg_name"
 			return $RET_OK
 		else
 			is_reinstall=1
+
+			# Preserve previous reason
+			reason="$(pkg_db_info_query "$pkgix_root" "$pkg_name" "reason" "$reason")"
 		fi
 	fi
 
@@ -976,7 +1016,7 @@ pkg_install() { #{{{
 			cp -a "${install_dir}/${pkgix_root}"/* "${pkgix_root}"
 		fi
 
-		pkg_install_db "$pkgix_root" "$pkg_name" "$reason" \
+		pkg_db_install "$pkgix_root" "$pkg_name" "$reason" \
 			"$staging_files_file" "$pkgnew_files_file" "$staging_backup_file"
 
 		trap - EXIT
@@ -1007,7 +1047,7 @@ pkg_remove() { #{{{
 	local pkg_name="$2"
 	local purge="${3:-0}"
 
-	if ! pkg_isinstalled_db "$pkgix_root" "$pkg_name"; then
+	if ! pkg_db_isinstalled "$pkgix_root" "$pkg_name"; then
 		error_printf $"'%s' not found!\n" "$pkg_name"
 		exit $EXIT_ERR
 	fi
@@ -1147,14 +1187,8 @@ root_upgrade() { #{{{
 
 	db_list_installed "$pkgix_root" |
 	while read pkg_name; do
-		set_db_vars "$pkgix_root" "$pkg_name"
-
-		old_version="$(<$db_version_file)"
-
 		(
-			source "$db_info_file"
-			prev_reason="${reason:-$REASON_EXPLICIT}"
-			unset_db_info
+			old_version="$(pkg_db_info_query "$pkgix_root" "$pkg_name" "version")"
 
 			if ! source_pkg "$pkg_name"; then
 				warning_printf $"Could not find package description file for '%s', skipping upgrade...\n" "$pkg_name"
@@ -1163,13 +1197,11 @@ root_upgrade() { #{{{
 				(( ! arg_reinstall )) && printf "\n" || printf " - "$"reinstall\n"
 				log_printf "$pkgix_root" $"upgrading"" %s (%s -> %s)\n" "$pkg_name" "$old_version" "${version:-}"
 
-				pkg_install "$pkgix_root" "$pkg_name" 1 "$prev_reason"
+				pkg_install "$pkgix_root" "$pkg_name" 1
 			else
 				msg_printf "%s (%s) "$"is up to date\n" "$pkg_name" "$old_version"
 			fi
 		) || exit $?  # Break out of pipe-subshell
-
-		unset_db_vars
 	done || return $? # Take return code if pipe-subshell exited with errors
 
 	msg_printf $"Done upgrading.\n"
@@ -1375,7 +1407,7 @@ cmd_show() { #{{{
 			pkgix_root="$(cd "$pkgix_root" && pwd)"
 			set_db_vars "$pkgix_root" "$pkg_name"
 
-			if pkg_isinstalled_db "$pkgix_root" "$pkg_name"; then
+			if pkg_db_isinstalled "$pkgix_root" "$pkg_name"; then
 				if (( arg_list_files )); then
 					local prefix_line=""
 					(( ! arg_quiet )) && prefix_line="$pkg_name " || :
