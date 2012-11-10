@@ -755,8 +755,10 @@ db_list_installed() { #{{{
 	local pkgix_root="$1"
 
 	if [[ -f "${pkgix_root}/${DB_PREFIX}.db" ]]; then
-		grep "^i|" "${pkgix_root}/${DB_PREFIX}.db" | sed 's:^i|::' |
+		local pkg_name
+		grep "^i|" "${pkgix_root}/${DB_PREFIX}.db" |
 		while read pkg_name; do
+			pkg_name="${pkg_name##i|}"
 			if ! pkg_isinstalled_db "$pkgix_root" "$pkg_name"; then
 				warning_printf $"Inconsistent database entry: %s\n" "$pkg_name"
 				continue
