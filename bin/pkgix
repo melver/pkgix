@@ -33,7 +33,10 @@ LOG_FILE="var/log/${PROGNAME}.log"
 LOCK_FILE="var/lock/${PROGNAME}.lock"
 URL_SEP=";"
 METAPKG_DUMMY="_dummy"
+REASON_EXPLICIT="explicit"
+REASON_DEPENDENCY="dependency"
 readonly PROG_VERSION PROGNAME DB_PREFIX LOG_FILE URL_SEP METAPKG_DUMMY
+readonly REASON_EXPLICIT REASON_DEPENDENCY
 
 #============================================================================
 # Exit codes
@@ -672,9 +675,10 @@ unset_db_vars() { #{{{
 pkg_install_db() { #{{{
 	local pkgix_root="$1"
 	local pkg_name="$2"
-	local staging_files_file="$3"
-	local pkgnew_files_file="$4"
-	local staging_backup_file="$5"
+	local reason="$3"
+	local staging_files_file="$4"
+	local pkgnew_files_file="$5"
+	local staging_backup_file="$6"
 
 	set_db_vars "$pkgix_root" "$pkg_name"
 
@@ -709,6 +713,8 @@ pkg_install_db() { #{{{
 			printf " '%s'" "$dep_name"
 		done
 		printf " )\n"
+
+		echo "reason=\"${reason}\""
 	} > "$db_info_file"
 
 	[[ -z "${description:-}" ]] && warning_printf $"Empty 'description' field in package description file of '%s'!\n" "$pkg_name"
@@ -739,6 +745,7 @@ unset_db_info() { #{{{
 	unset license
 	unset depends
 	unset installdate
+	unset reason
 } #}}}
 
 #============================================================================
@@ -767,6 +774,7 @@ pkg_install() { #{{{
 	local pkgix_root="$1"
 	local pkg_name="$2"
 	local reinstall="${3:-0}"
+	local reason="${4:-$REASON_EXPLICIT}"
 	local is_reinstall=0
 
 	if [[ ! -d "$pkgix_root" ]]; then
@@ -848,7 +856,7 @@ pkg_install() { #{{{
 			msg_printf "${Cgrn}%s (%s)${Crst} "$"resolving dependencies...\n" "$pkg_name" "${version:-}"
 			local dep_name
 			for dep_name in "${depends[@]:+${depends[@]}}"; do
-				pkg_install "$pkgix_root" "$dep_name"
+				pkg_install "$pkgix_root" "$dep_name" 0 "$REASON_DEPENDENCY"
 			done
 		else
 			warning_printf $"Ignoring dependencies.\n"
@@ -966,7 +974,8 @@ pkg_install() { #{{{
 			cp -a "${install_dir}/${pkgix_root}"/* "${pkgix_root}"
 		fi
 
-		pkg_install_db "$pkgix_root" "$pkg_name" "$staging_files_file" "$pkgnew_files_file" "$staging_backup_file"
+		pkg_install_db "$pkgix_root" "$pkg_name" "$reason" \
+			"$staging_files_file" "$pkgnew_files_file" "$staging_backup_file"
 
 		trap - EXIT
 		popd &> /dev/null
@@ -1141,6 +1150,10 @@ root_upgrade() { #{{{
 		old_version="$(<$db_version_file)"
 
 		(
+			source "$db_info_file"
+			prev_reason="${reason:-$REASON_EXPLICIT}"
+			unset_db_info
+
 			if ! source_pkg "$pkg_name"; then
 				warning_printf $"Could not find package description file for '%s', skipping upgrade...\n" "$pkg_name"
 			elif [[ "${version:-}" != "$old_version" ]] || (( arg_reinstall )); then
@@ -1148,7 +1161,7 @@ root_upgrade() { #{{{
 				(( ! arg_reinstall )) && printf "\n" || printf " - "$"reinstall\n"
 				log_printf "$pkgix_root" $"upgrading"" %s (%s -> %s)\n" "$pkg_name" "$old_version" "${version:-}"
 
-				pkg_install "$pkgix_root" "$pkg_name" 1
+				pkg_install "$pkgix_root" "$pkg_name" 1 "$prev_reason"
 			else
 				msg_printf "%s (%s) "$"is up to date\n" "$pkg_name" "$old_version"
 			fi
@@ -1277,26 +1290,57 @@ cmd_avail() { #{{{
 cmd_list() { #{{{
 	local pkgix_root
 	for pkgix_root in "$@"; do
-		if [[ -d "$pkgix_root" ]]; then
-			pkgix_root="$(cd "$pkgix_root" && pwd)"
-			(( ! arg_quiet )) && printf "%b" "${CgrnB}${pkgix_root}${Crst}\n" 1>&2 || :
+		[[ -d "$pkgix_root" ]] || continue && pkgix_root="$(cd "$pkgix_root" && pwd)"
+		(( ! arg_quiet )) && printf "%b" "${CgrnB}${pkgix_root}${Crst}\n" 1>&2 || :
 
-			db_list_installed "$pkgix_root" | sort |
-			while read pkg_name; do
+		db_list_installed "$pkgix_root" | sort |
+		while read pkg_name; do
+			(
 				set_db_vars "$pkgix_root" "$pkg_name"
+
+				if (( ! arg_quiet || arg_list_explicit || arg_list_depends || arg_list_unrequired )); then
+					source "$db_info_file"
+				fi
+
+				if (( arg_list_explicit && ! arg_list_depends )); then
+					[[ "${reason:-}" != "$REASON_EXPLICIT" ]] && continue || :
+				fi
+
+				if (( ! arg_list_explicit && arg_list_depends )); then
+					[[ "${reason:-}" != "$REASON_DEPENDENCY" ]] && continue || :
+				fi
+
+				if (( arg_list_unrequired )); then
+					(
+						# Check if any package in any provided pkgix_root
+						# depends on the current package; if the current
+						# package is required, continue while loop.
+
+						for _pkgix_root in "$@"; do
+							[[ -d "$_pkgix_root" ]] || continue && _pkgix_root="$(cd "$_pkgix_root" && pwd)"
+							db_list_installed "$_pkgix_root" |
+							while read _pkg_name; do
+								set_db_vars "$_pkgix_root" "$_pkg_name"
+
+								# Tried using grep here, but the BASH-only
+								# version is roughly 2x faster.
+								source "$db_info_file"
+								if in_list "$pkg_name" "${depends[@]:+${depends[@]}}"; then
+									verbose_printf $"'%s: %s' required by '%s: %s'\n" "$pkgix_root" "$pkg_name" "$_pkgix_root" "$_pkg_name"
+									exit $EXIT_ERR
+								fi
+							done || exit $?
+						done
+					) || continue
+				fi
 
 				if (( arg_quiet )); then
 					echo "$pkgix_root $pkg_name"
 				else
-					(
-						source "$db_info_file"
-						printf "%-42s %-18s %s\n" "${pkg_name}" "$(<$db_version_file)" "${description:-}"
-					)
+					printf "%-42s %-18s %s\n" "${pkg_name}" "$(<$db_version_file)" "${description:-}"
 				fi
-
-				unset_db_vars
-			done
-		fi
+			)
+		done
 	done
 } #}}}
 
@@ -1345,6 +1389,7 @@ cmd_show() { #{{{
 					echo " License      : ${license[*]:+${license[*]}}"
 					echo " Depends      : ${depends[*]:+${depends[*]}}"
 					echo " Install date : ${installdate:-}"
+					echo " Reason       : ${reason:-}"
 
 					echo
 					unset_db_info
@@ -1598,7 +1643,24 @@ case "$cmd" in
 
 		run_cmd "$@"
 		;;
-	list|showenv|chenv|avail)
+	list)
+		arg_list_explicit=0
+		arg_list_depends=0
+		arg_list_unrequired=0
+
+		while :; do
+			case "${1:-}" in
+				-e|--explicit) arg_list_explicit=1 ;;
+				-d|--depends) arg_list_depends=1 ;;
+				-u|--unrequired) arg_list_unrequired=1 ;;
+				*) break ;;
+			esac
+			shift
+		done
+
+		run_cmd "$@"
+		;;
+	showenv|chenv|avail)
 		run_cmd "$@"
 		;;
 	help)
@@ -1655,7 +1717,22 @@ case "$cmd" in
     -l, --list\n\
         List installed package files.\n"
 				;;
-			list|showenv|chenv)
+			list)
+				printf -- $"Usage: %s %s [-e|--explicit] [-d|--depends] [-u|--unrequired] <pkgix-roots>...\n" "$PROGNAME" "$1"
+				echo
+				printf -- $"Options:\n"
+				printf -- $"\
+    -e, --explicit\n\
+        List only explicitly installed packages.\n"
+				printf -- $"\
+    -d, --depends\n\
+        List only packages installed as a dependency for another package.\n"
+				printf -- $"\
+    -u, --unrequired\n\
+        List unrequired packages: packages not required by any other package;\n\
+        checks dependencies between all listed <pkgix-roots>.\n"
+				;;
+			showenv|chenv)
 				printf -- $"Usage: %s %s <pkgix-roots>...\n" "$PROGNAME" "$1"
 				;;
 			avail)
