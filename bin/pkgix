@@ -844,7 +844,9 @@ pkg_install() { #{{{
 
 	if pkg_db_isinstalled "$pkgix_root" "$pkg_name"; then
 		if (( ! reinstall )); then
-			msg_printf "${Cgrn}%s${Crst} "$"is available\n" "$pkg_name"
+			local _fn_printf
+			[[ "$reason" == "$REASON_EXPLICIT" ]] && _fn_printf="msg_printf" || _fn_printf="verbose_printf"
+			$_fn_printf "${Cgrn}%s${Crst} "$"is available\n" "$pkg_name"
 			return $RET_OK
 		else
 			is_reinstall=1
@@ -1202,6 +1204,7 @@ cmd_install() { #{{{
 #
 root_upgrade() { #{{{
 	local pkgix_root="$1"
+	shift
 
 	if [[ ! -f "${pkgix_root}/${DB_PREFIX}.db" ]]; then
 		warning_printf $"'%s' is not a valid %s root!\n" "$pkgix_root" "$PROGNAME"
@@ -1219,6 +1222,11 @@ root_upgrade() { #{{{
 
 	db_list_installed "$pkgix_root" |
 	while read pkg_name; do
+		# If package list provided, filter by that list
+		if (( $# > 0 )); then
+			in_list "$pkg_name" "$@" || continue
+		fi
+
 		(
 			old_version="$(pkg_db_info_query "$pkgix_root" "$pkg_name" "version")"
 
@@ -1254,12 +1262,19 @@ cmd_upgrade() { #{{{
 		exit $EXIT_ERR
 	fi
 
+	local pkgix_roots=()
+	while [[ -n "${1:-}" && "$1" != "--" ]]; do
+		pkgix_roots+=("$1")
+		shift || break
+	done
+	shift || :
+
 	local pkgix_root
 	local ret_code
-	for pkgix_root in "$@"; do
+	for pkgix_root in "${pkgix_roots[@]}"; do
 		# Run nested, not to pollute subsequent upgrades with export_env
 		# The environment should be set accordingly prior to upgrading!
-		( root_upgrade "$pkgix_root" ) && ret_code=$? || ret_code=$?
+		( root_upgrade "$pkgix_root" "$@" ) && ret_code=$? || ret_code=$?
 		if (( ret_code != RET_OK && ret_code != RET_INVALID_OPTION && ret_code != RET_USER_ABORT )); then
 			exit $EXIT_ERR
 		fi
@@ -1420,7 +1435,7 @@ cmd_list() { #{{{
 cmd_show() { #{{{
 	local pkgix_roots=()
 
-	if [[ "$*" =~ " -- " ]]; then
+	if in_list "--" "$@"; then
 		while [[ "$1" != "--" ]]; do
 			pkgix_roots+=("$1")
 			shift || break
@@ -1568,7 +1583,7 @@ prog_usage() { #{{{
 				if [[ "$1" == "install" ]]; then
 					printf -- $"                     <pkgix-root> <pkgs>...\n"
 				else
-					printf -- $"                     <pkgix-roots>...\n"
+					printf -- $"                     <pkgix-roots>... [-- <pkgs>...]\n"
 				fi
 
 				echo
