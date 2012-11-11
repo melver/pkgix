@@ -828,8 +828,19 @@ pkg_install() { #{{{
 		else
 			is_reinstall=1
 
-			# Preserve previous reason
-			reason="$(pkg_db_info_query "$pkgix_root" "$pkg_name" "reason" "$reason")"
+			# Set reason based on user-override if provided, otherwise preserve previous reason
+			if (( ! arg_reason_dependency && ! arg_reason_explicit )); then
+				reason="$(pkg_db_info_query "$pkgix_root" "$pkg_name" "reason" "$reason")"
+			fi
+		fi
+	fi
+
+	# Only allow forcing reason for explicitly selected packages.
+	if [[ "$reason" == "$REASON_EXPLICIT" ]]; then
+		if (( arg_reason_dependency )); then
+			reason="$REASON_DEPENDENCY"
+		elif (( arg_reason_explicit )); then
+			reason="$REASON_EXPLICIT"
 		fi
 	fi
 
@@ -1526,7 +1537,8 @@ prog_usage() { #{{{
 		case "${1:-}" in
 			install|upgrade)
 				printf -- $"Usage: %s %s [-f|--force] [-d|--nodeps] [-r|--reinstall]\n\
-                     [-k|--keep-build-dir] [--ignore-checksums]\n" "$PROGNAME" "$1"
+                     [-k|--keep-build-dir] [--ignore-checksums]\n\
+                     [--asdeps] [--asexplicit]\n" "$PROGNAME" "$1"
 
 				if [[ "$1" == "install" ]]; then
 					printf -- $"                     <pkgix-root> <pkgs>...\n"
@@ -1559,6 +1571,12 @@ prog_usage() { #{{{
 				printf -- $"\
     --ignore-checksums\n\
         Ignores checksums for remotely fetched files.\n"
+				printf -- $"\
+    --asdeps\n\
+        Set reason for all selected packages to installed as a dependency.\n"
+				printf -- $"\
+    --asexplicit\n\
+        Set reason for all selected packages to explicitly installed.\n"
 				;;
 			remove)
 				printf -- $"Usage: %s %s [-P|--purge]\n" "$PROGNAME" "$1"
@@ -1760,6 +1778,8 @@ case "$cmd" in
 		arg_keep_build_dir=0
 		arg_ignore_checksums=0
 		arg_dry_run=0
+		arg_reason_dependency=0
+		arg_reason_explicit=0
 
 		while :; do
 			case "${1:-}" in
@@ -1769,6 +1789,8 @@ case "$cmd" in
 				-k|--keep-build-dir) arg_keep_build_dir=1 ;;
 				-D|--dry) arg_dry_run=1 ;;
 				--ignore-checksums) arg_ignore_checksums=1 ;;
+				--asdeps) arg_reason_dependency=1 ;;
+				--asexplicit) arg_reason_explicit=1 ;;
 				--) shift; break ;;
 				-*)
 					expand_short_opts "fdrkD" "$1"
