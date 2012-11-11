@@ -1793,8 +1793,8 @@ run_cmd() { #{{{
 				IFS="$o_IFS" ; unset o_IFS
 
 				case "$cmd" in
-					show) cmd_$cmd "${args_root[@]}" -- "$@" ;;
-					*)    cmd_$cmd "${args_root[@]}" "$@" ;;
+					show|upgrade) cmd_$cmd "${args_root[@]}" -- "$@" ;;
+					*) cmd_$cmd "${args_root[@]}" "$@" ;;
 				esac
 			fi
 			;;
