@@ -300,6 +300,19 @@ extract_archive() { #{{{
 } #}}}
 
 #============================================================================
+# fetch_remote url file_name
+# Wrapper around remote-fetch utility.
+# Download from url and save to file_name.
+#
+fetch_remote() { #{{{
+	local url="$1"
+	local file_name="$2"
+	local fetch_cmd
+	printf -v fetch_cmd -- "$PKGIX_FETCH" "$file_name"
+	$fetch_cmd "$url"
+} #}}}
+
+#============================================================================
 # fetch url checksum_sha256 [file_name]
 # Function for use in package description files.
 #
@@ -322,10 +335,8 @@ fetch() { #{{{
 				exit $EXIT_ERR
 			fi
 		else
-			local fetch_cmd
-			printf -v fetch_cmd "$PKGIX_FETCH" "$file_name"
 			msg_printf $"Fetching '%s'...\n" "$url"
-			if ! $fetch_cmd "$url"; then
+			if ! fetch_remote "$url" "$file_name"; then
 				error_printf $"Fetching '%s' failed!\n" "$url"
 				exit $EXIT_ERR
 			fi
