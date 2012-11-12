@@ -45,12 +45,12 @@ Examples
 
     # Add a remote repository. Additional URLs are processed in
     # order, until the requested package description file is found.
-    $ pkgix -r https://raw.github.com/melver/pkgix/master/pkgs install some-prefix dev/gcc-4.4
+    $ pkgix -r https://raw.github.com/pkgix/pkgix-repo/master/pkgs install some-prefix dev/gcc-4.4
 
 Repositories
 ============
 
 List of known repository URLs:
 
-1. `pkgix-repo <https://github.com/melver/pkgix-repo>`_: https://raw.github.com/melver/pkgix-repo/master/pkgs
+1. `pkgix-repo <https://github.com/pkgix/pkgix-repo>`_: https://raw.github.com/pkgix/pkgix-repo/master/pkgs
 
