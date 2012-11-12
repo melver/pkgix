@@ -580,7 +580,7 @@ source_pkg() { #{{{
 				local tmpfile="$(mktemp)"
 
 				verbose_printf $"Trying: %s\n" "$pkg_file"
-				if wget -q -O "$tmpfile" "$pkg_file"; then
+				if fetch_remote "$pkg_file" "$tmpfile" 2> /dev/null; then
 					verbose_printf $"Source:"" ${Cgrn}%s${Crst}\n" "$pkg_file"
 					source_pkg_file "$pkg_name" "$tmpfile"
 					rm "$tmpfile"
