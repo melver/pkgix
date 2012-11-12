@@ -77,20 +77,37 @@ readonly RET_OK RET_ERR RET_INVALID_OPTION RET_USER_ABORT
 # PKGIX_UPGRADE_IGNORE: An array of package names, which should be ignored on
 # upgrade. Can only be set via the RC-file.
 #
-: ${PKGIXRC:="${HOME}/.${PROGNAME}rc"}
-: ${PKGIX_REPO_URLS:="${HOME}/${PROGNAME}-repo/pkgs"}
-: ${PKGIX_SHELL:="$SHELL"}
-: ${PKGIX_FETCH:="wget -O %s"}
-: ${PKGIX_COLOR:=1}
-PKGIX_UPGRADE_IGNORE=()
-
 # PKGIX_ROOT: If set, PKGIX_ROOT is being used as the default root (no need to
 # specify for each command).
 #
 # PKGIX_BUILD_DIR: If set, uses ${PKGIX_BUILD_DIR}/{pkgix-build,pkgix-install}
 # to build packages in, instead of default <prefix-root>/{.pkgix-build,.pkgix-install}.
+#
+: ${PKGIXRC:="${HOME}/.${PROGNAME}rc"}
 
+##
+# Set variables which can only be set from the RC-file here, but need to be set
+# even if the RC-file does not set them:
+PKGIX_UPGRADE_IGNORE=()
+
+##
+# Set configurable variables from RC-file first, so we do not unnecessarily
+# set some of these twice.
 [[ -r "$PKGIXRC" ]] && source "$PKGIXRC" || :
+
+##
+# Set variable defaults which have not been defined by either environment or
+# RC-file:
+: ${PKGIX_SHELL:="$SHELL"}
+: ${PKGIX_FETCH:="wget -O %s"}
+: ${PKGIX_COLOR:=1}
+
+# PKGIX_REPO_URLS must be declared; check with declare -p, instead of ${..:-},
+# so that an empty array will not be assigned anything else (in this case the
+# first element would be set to the default).
+if ! declare -p PKGIX_REPO_URLS &> /dev/null; then
+	[[ -d "${HOME}/${PROGNAME}-repo/pkgs" ]] && PKGIX_REPO_URLS="${HOME}/${PROGNAME}-repo/pkgs" || PKGIX_REPO_URLS=""
+fi
 
 #============================================================================
 # Setup gettext ($"...")
@@ -574,7 +591,7 @@ source_pkg() { #{{{
 	# Don't set repo_url as local here, as it can then be used in the package
 	# description files to get information about its source repository, and 
 	# e.g., download extra files such as patches from the repo.
-	for repo_url in "${PKGIX_REPO_URLS[@]}"; do
+	for repo_url in "${PKGIX_REPO_URLS[@]:+${PKGIX_REPO_URLS[@]}}"; do
 		pkg_file="${repo_url}/$pkg_name"
 
 		case "$pkg_file" in
@@ -1325,7 +1342,7 @@ cmd_remove() { #{{{
 cmd_avail() { #{{{
 	if (( $# == 0 )); then
 		local repo_url
-		for repo_url in "${PKGIX_REPO_URLS[@]}"; do
+		for repo_url in "${PKGIX_REPO_URLS[@]:+${PKGIX_REPO_URLS[@]}}"; do
 			(( ! arg_quiet )) && printf "%b" "${CbluB}-> ${CgrnB}${repo_url}${Crst}\n" 1>&2 || :
 			case "$repo_url" in
 				http://*|https://*|ftp://*)
@@ -1537,7 +1554,7 @@ cmd_chenv() { #{{{
 sanitize_repo_urls() { #{{{
 	# Check if it is already an array (user set in RC-file)
 	if [[ "$(declare -p PKGIX_REPO_URLS)" =~ ^"declare -a" ]]; then
-		local old_repo_urls=("${PKGIX_REPO_URLS[@]}")
+		local old_repo_urls=("${PKGIX_REPO_URLS[@]:+${PKGIX_REPO_URLS[@]}}")
 	else
 		local o_IFS="$IFS" ; IFS="$URL_SEP"
 		local old_repo_urls=(${PKGIX_REPO_URLS[@]})
@@ -1547,7 +1564,7 @@ sanitize_repo_urls() { #{{{
 	PKGIX_REPO_URLS=()
 
 	local url
-	for url in "${old_repo_urls[@]}"; do
+	for url in "${old_repo_urls[@]:+${old_repo_urls[@]}}"; do
 		[[ "$url" =~ ^file:// ]] && url="${url##file://}"
 		url=${url%%/}
 
