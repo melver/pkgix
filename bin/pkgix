@@ -63,7 +63,9 @@ readonly RET_OK RET_ERR RET_INVALID_OPTION RET_USER_ABORT
 # PKGIXRC: RC-file, which is sourced and can be used to set configurable
 # variables.
 #
-# PKGIX_REPO_URLS: List of repo-urls
+# PKGIX_REPO_URLS: List of repo-urls; either a URL_SEP separated string of
+# repo-urls, or an array. Note that additional URLs specified with `-r` are
+# prepended if this is a string, and appended if it's an array.
 #
 # PKGIX_SHELL: Which shell should be invoked for chenv and is also used to
 # determine the showenv format.
@@ -1533,24 +1535,24 @@ cmd_chenv() { #{{{
 # Turn PKGIX_REPO_URLS into an array and sanitize some urls
 #
 sanitize_repo_urls() { #{{{
-	# If it is already an array (user set in RC-file)
-	[[ "$(declare -p PKGIX_REPO_URLS)" =~ ^"declare -a" ]] && return
+	# Check if it is already an array (user set in RC-file)
+	if [[ "$(declare -p PKGIX_REPO_URLS)" =~ ^"declare -a" ]]; then
+		local old_repo_urls=("${PKGIX_REPO_URLS[@]}")
+	else
+		local o_IFS="$IFS" ; IFS="$URL_SEP"
+		local old_repo_urls=(${PKGIX_REPO_URLS[@]})
+		IFS="$o_IFS" ; unset o_IFS
+	fi
 
-	local old_repo_urls="$PKGIX_REPO_URLS"
-	local o_IFS="$IFS" ; IFS="$URL_SEP"
-
-	# Turn it into a proper array
 	PKGIX_REPO_URLS=()
 
 	local url
-	for url in $old_repo_urls; do
+	for url in "${old_repo_urls[@]}"; do
 		[[ "$url" =~ ^file:// ]] && url="${url##file://}"
 		url=${url%%/}
 
 		PKGIX_REPO_URLS+=("${url}")
 	done
-
-	IFS="$o_IFS"
 } #}}}
 
 #============================================================================
@@ -1559,7 +1561,8 @@ sanitize_repo_urls() { #{{{
 #
 prog_usage() { #{{{
 	if [[ -z "${1:-}" ]]; then
-		printf -- $"Usage: %s [-r|--repo-urls] [-n|--noconfirm] [-v|--verbose] [--debug]\n\
+		printf -- $"Usage: %s [-r|--repo-urls <repo-urls>] [-n|--noconfirm]\n\
+             [-v|--verbose] [--debug]\n\
              <command> [<args>]\n" "$PROGNAME"
 		echo
 		printf -- $"Commands available:\n"
@@ -1575,7 +1578,7 @@ prog_usage() { #{{{
 		printf -- $"Options:\n"
 		printf -- $"\
     -r, --repo-urls\n\
-        Specify additional package repository URL; use '%s' to\n\
+        Specify additional package repository URLs; use '%s' to\n\
         separate multiple repositories. Currently supported protocols are:\n\
         file:// (default), http://, https://, ftp://\n" "$URL_SEP"
 		printf -- $"\
