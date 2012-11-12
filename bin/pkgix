@@ -430,8 +430,8 @@ export_env() { #{{{
 	else
 		# Check if this has already been exported
 		# Also check CPATH, as I don't expect a user to set it for a pkgix root.
-		[[ "$PKGIX_ROOT" =~ ^(.*:)?${pkgix_root}(:.*)?$ &&
-			"$CPATH" =~ ^(.*:)?${pkgix_root}/include(:.*)?$ ]] && return $RET_OK
+		[[ "$PKGIX_ROOT" =~ ^(.*:)?"${pkgix_root}"(:.*)?$ &&
+			"${CPATH:-}" =~ ^(.*:)?"${pkgix_root}"/include(:.*)?$ ]] && return $RET_OK
 
 		export PKGIX_ROOT="$PKGIX_ROOT:${pkgix_root}"
 	fi
