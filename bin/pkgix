@@ -808,7 +808,7 @@ pkg_db_info_query() { #{{{
 				;;
 			*)
 				source "$db_info_file"
-				eval "echo \"\${${property}:-${default}}\""
+				echo "${!property:-${default}}"
 				unset_db_info
 				;;
 		esac
