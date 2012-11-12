@@ -1,0 +1,22 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR Marco Elver <me@marcoelver.com>
+# This file is distributed under the same license as the PACKAGE package.
+#
+# Translators:
+# FULL NAME <EMAIL@ADDRESS>, YEAR.
+msgid ""
+msgstr ""
+"Project-Id-Version: pkgix package manager\n"
+"Report-Msgid-Bugs-To: http://pkgix.org\n"
+"POT-Creation-Date: 2012-11-12 00:00-0000\n"
+"PO-Revision-Date: 2012-11-12 00:00+0000\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE-TEAM <>\n"
+"Language: LANG\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+# To create a new translation file, run:
+# (cat pkgix.pot && bash --dump-po-strings ../bin/pkgix) > LANG.po
+
