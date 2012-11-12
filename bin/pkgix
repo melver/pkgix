@@ -31,6 +31,7 @@ PROGNAME="pkgix"
 DB_PREFIX="var/lib/${PROGNAME}/local"
 LOG_FILE="var/log/${PROGNAME}.log"
 LOCK_FILE="var/lock/${PROGNAME}.lock"
+REMOTE_AVAIL_FILE=".avail"
 URL_SEP=";"
 METAPKG_DUMMY="_dummy"
 REASON_EXPLICIT="explicit"
@@ -567,12 +568,11 @@ source_pkg_file() { #{{{
 source_pkg() { #{{{
 	local pkg_name="$1"
 	local pkg_file
-	local o_IFS="$IFS" ; IFS="$URL_SEP"
 
 	# Don't set repo_url as local here, as it can then be used in the package
 	# description files to get information about its source repository, and 
 	# e.g., download extra files such as patches from the repo.
-	for repo_url in $PKGIX_REPO_URLS; do
+	for repo_url in "${PKGIX_REPO_URLS[@]}"; do
 		pkg_file="${repo_url}/$pkg_name"
 
 		case "$pkg_file" in
@@ -598,8 +598,6 @@ source_pkg() { #{{{
 				;;
 		esac
 	done
-
-	IFS="$o_IFS"
 
 	[[ -n "${version:-}" || "${metapkg:-}" == "$METAPKG_DUMMY" ]]
 } #}}}
@@ -1324,17 +1322,28 @@ cmd_remove() { #{{{
 #
 cmd_avail() { #{{{
 	if (( $# == 0 )); then
-		local o_IFS="$IFS" ; IFS="$URL_SEP"
 		local repo_url
-		for repo_url in $PKGIX_REPO_URLS; do
-			(( ! arg_quiet )) && printf -- "${CbluB}-> ${CgrnB}${repo_url}${Crst}\n" || :
+		for repo_url in "${PKGIX_REPO_URLS[@]}"; do
+			(( ! arg_quiet )) && printf "%b" "${CbluB}-> ${CgrnB}${repo_url}${Crst}\n" 1>&2 || :
 			case "$repo_url" in
 				http://*|https://*|ftp://*)
-					msg_printf $"Listing packages for a HTTP repository is not supported!\n"
+					(
+						if ! fetch_remote "${repo_url}/$REMOTE_AVAIL_FILE" "-" 2> /dev/null; then
+							warning_printf $"Fetching '%s' failed!\n" "${repo_url}/$REMOTE_AVAIL_FILE"
+						fi
+					) |
+					while read pkg_short_info; do
+						if (( arg_quiet )); then
+							echo "$repo_url ${pkg_short_info%% *}"
+						else
+							echo "$pkg_short_info"
+						fi
+					done
 					;;
 				*)
-					# Don't show hidden files
-					find_printbase "$repo_url" \( -type f -o -type l \) -a ! -name ".*" 2> /dev/null | sort |
+					# Do not show hidden files and do not descend into hidden folders.
+					# Need trailing slash, in case the repo_url is the path to a symlink.
+					find_printbase "${repo_url}/" ! \( -name ".*" -prune \) -a \( -type f \) 2> /dev/null | sort |
 					while read pkg_name; do
 						if (( arg_quiet )); then
 							echo "$repo_url $pkg_name"
@@ -1352,8 +1361,6 @@ cmd_avail() { #{{{
 					;;
 			esac
 		done
-
-		IFS="$o_IFS"
 	else
 		local pkg_name
 		for pkg_name in "$@"; do
@@ -1387,7 +1394,7 @@ cmd_list() { #{{{
 	local pkgix_root
 	for pkgix_root in "$@"; do
 		[[ -d "$pkgix_root" ]] || continue && pkgix_root="$(cd "$pkgix_root" && pwd)"
-		(( ! arg_quiet )) && printf "%b" "${CgrnB}${pkgix_root}${Crst}\n" 1>&2 || :
+		(( ! arg_quiet )) && printf "%b" "${CbluB}-> ${CgrnB}${pkgix_root}${Crst}\n" 1>&2 || :
 
 		db_list_installed "$pkgix_root" | sort |
 		while read pkg_name; do
@@ -1521,18 +1528,26 @@ cmd_chenv() { #{{{
 	exec "$PKGIX_SHELL"
 } #}}}
 
+#============================================================================
+# sanitize_repo_urls
+# Turn PKGIX_REPO_URLS into an array and sanitize some urls
+#
 sanitize_repo_urls() { #{{{
+	# If it is already an array (user set in RC-file)
+	[[ "$(declare -p PKGIX_REPO_URLS)" =~ ^"declare -a" ]] && return
+
 	local old_repo_urls="$PKGIX_REPO_URLS"
 	local o_IFS="$IFS" ; IFS="$URL_SEP"
 
-	PKGIX_REPO_URLS=""
+	# Turn it into a proper array
+	PKGIX_REPO_URLS=()
 
 	local url
 	for url in $old_repo_urls; do
 		[[ "$url" =~ ^file:// ]] && url="${url##file://}"
 		url=${url%%/}
 
-		PKGIX_REPO_URLS+="${url};"
+		PKGIX_REPO_URLS+=("${url}")
 	done
 
 	IFS="$o_IFS"
@@ -1754,8 +1769,13 @@ while :; do
 	case "${1:-}" in
 		-r|--repo-urls)
 			[[ -z "${2:-}" ]] && { prog_usage; exit $EXIT_INVALID_OPTION; }
-
-			PKGIX_REPO_URLS="${2}${URL_SEP}${PKGIX_REPO_URLS}"
+			if [[ "$(declare -p PKGIX_REPO_URLS)" =~ ^"declare -a" ]]; then
+				# append
+				PKGIX_REPO_URLS+=("$2")
+			else
+				# prepend
+				PKGIX_REPO_URLS="${2}${URL_SEP}${PKGIX_REPO_URLS}"
+			fi
 			shift
 			;;
 		-v|--verbose) arg_verbose=1 ;;
