@@ -111,11 +111,33 @@ if ! declare -p PKGIX_REPOS &> /dev/null; then
 fi
 
 #============================================================================
+# abspath path
+# Get absolute path.
+# Normalizes the path if dir or file exists.
+#
+abspath() { #{{{
+	local path="$1"
+
+	if [[ -d "$path" ]]; then
+		( cd "$path" && pwd )
+	elif [[ -f "$path" ]]; then
+		echo "$( cd "${path%/*}" && pwd )/${path##*/}"
+	else
+		# Doesn't seem to exist, try best guess
+		if [[ "$path" =~ ^/ ]]; then
+			echo "$path"
+		else
+			echo "$(pwd)/${path}"
+		fi
+	fi
+} #}}}
+
+#============================================================================
 # Setup gettext ($"...")
 # Need to set TEXTDOMAIN first, then TEXTDOMAINDIR -- see BASH 4.2 source
 #
 TEXTDOMAIN="$PROGNAME"
-TEXTDOMAINDIR="$(cd "${0%/*}"/.. && pwd)/share/locale"
+TEXTDOMAINDIR="$(abspath "${0%/*}/../share/locale")"
 
 #============================================================================
 # Color config
@@ -201,7 +223,7 @@ warning_printf() { #{{{
 } #}}}
 
 #============================================================================
-# Sanitize environment variables (need *_printf)
+# Sanitize environment variables (needs error_printf)
 #
 if [[ -n "${PKGIX_BUILD_DIR:-}" ]]; then
 	if [[ ! -d "$PKGIX_BUILD_DIR" ]]; then
@@ -209,7 +231,7 @@ if [[ -n "${PKGIX_BUILD_DIR:-}" ]]; then
 		exit $EXIT_ERR
 	fi
 
-	PKGIX_BUILD_DIR="$(cd "$PKGIX_BUILD_DIR" && pwd)"
+	PKGIX_BUILD_DIR="$(abspath "$PKGIX_BUILD_DIR")"
 fi
 
 #============================================================================
@@ -265,7 +287,7 @@ esac #}}}
 # Should not call from subshells!
 #
 lock_prefix() { #{{{
-	local pkgix_prefix="$(cd "$1" && pwd)"
+	local pkgix_prefix="$(abspath "$1")"
 	local lock_file="${pkgix_prefix}/${LOCK_FILE}"
 	if [[ -f "$lock_file" ]]; then
 		error_printf $"%s exists!\n" "$lock_file"
@@ -282,7 +304,7 @@ lock_prefix() { #{{{
 # unlock_prefix pkgix_prefix
 #
 unlock_prefix() { #{{{
-	local pkgix_prefix="$(cd "$1" && pwd)"
+	local pkgix_prefix="$(abspath "$1")"
 	local lock_file="${pkgix_prefix}/${LOCK_FILE}"
 	rm "$lock_file"
 	trap - EXIT
@@ -440,8 +462,8 @@ prompt_continue() { #{{{
 # export_env pkgix_prefix
 #
 export_env() { #{{{
-	[[ ! -d "${1:-}" ]] && return $RET_ERR
-	local pkgix_prefix="$(cd "$1" && pwd)"
+	local pkgix_prefix="$(abspath "$1")"
+	[[ ! -d "$pkgix_prefix" ]] && return $RET_ERR
 
 	if [[ -z "${PKGIX_PREFIX:-}" ]]; then
 		# Export so calls to pkgix don't need the prefix; appending, so that 
@@ -1191,12 +1213,7 @@ pkg_remove() { #{{{
 # cmd_install pkgix_prefix pkg_name...
 #
 cmd_install() { #{{{
-	if [[ -z "${1:-}" ]]; then
-		error_printf $"You need to specify a prefix!\n"
-		exit $EXIT_ERR
-	fi
-
-	local pkgix_prefix="$1"
+	local pkgix_prefix="$(abspath "$1")"
 	shift
 
 	if [[ -z "${1:-}" ]]; then
@@ -1209,9 +1226,9 @@ cmd_install() { #{{{
 			error_printf $"Could not create directory '%s'!\n" "$pkgix_prefix"
 			exit $EXIT_ERR
 		fi
+		pkgix_prefix="$(abspath "$1")"
 	fi
 
-	pkgix_prefix="$(cd "$pkgix_prefix" && pwd)"
 	export_env "$pkgix_prefix"
 
 	lock_prefix "$pkgix_prefix" || exit $EXIT_ERR
@@ -1232,7 +1249,7 @@ cmd_install() { #{{{
 # prefix_upgrade pkgix_prefix
 #
 prefix_upgrade() { #{{{
-	local pkgix_prefix="$1"
+	local pkgix_prefix="$(abspath "$1")"
 	shift
 
 	if [[ ! -f "${pkgix_prefix}/${DB_PREFIX}.db" ]]; then
@@ -1240,7 +1257,6 @@ prefix_upgrade() { #{{{
 		return $RET_INVALID_OPTION
 	fi
 
-	pkgix_prefix="$(cd "$pkgix_prefix" && pwd)"
 	export_env "$pkgix_prefix"
 
 	lock_prefix "$pkgix_prefix" || exit $EXIT_ERR
@@ -1286,11 +1302,6 @@ prefix_upgrade() { #{{{
 # cmd_upgrade pkgix_prefix...
 #
 cmd_upgrade() { #{{{
-	if [[ -z "${1:-}" ]]; then
-		error_printf $"You need to specify at least one prefix!\n"
-		exit $EXIT_ERR
-	fi
-
 	local pkgix_prefixes=()
 	while [[ -n "${1:-}" && "$1" != "--" ]]; do
 		pkgix_prefixes+=("$1")
@@ -1314,15 +1325,13 @@ cmd_upgrade() { #{{{
 # cmd_remove pkgix_prefix pkg_name...
 #
 cmd_remove() { #{{{
-	local pkgix_prefix="${1:-}"
+	local pkgix_prefix="$(abspath "$1")"
 	shift || { error_printf $"No targets specified!\n"; exit $EXIT_ERR; }
 
 	if [[ ! -d "$pkgix_prefix" ]]; then
 		error_printf $"'%s' is not a valid directory!\n" "$pkgix_prefix"
 		exit $EXIT_ERR
 	fi
-
-	pkgix_prefix="$(cd "$pkgix_prefix" && pwd)"
 
 	lock_prefix "$pkgix_prefix" || exit $EXIT_ERR
 
@@ -1413,7 +1422,7 @@ cmd_avail() { #{{{
 cmd_list() { #{{{
 	local pkgix_prefix
 	for pkgix_prefix in "$@"; do
-		[[ -d "$pkgix_prefix" ]] || continue && pkgix_prefix="$(cd "$pkgix_prefix" && pwd)"
+		[[ -d "$pkgix_prefix" ]] || continue && pkgix_prefix="$(abspath "$pkgix_prefix")"
 		(( ! arg_quiet )) && printf "%b" "${CbluB}-> ${CgrnB}${pkgix_prefix}${Crst}\n" 1>&2 || :
 
 		db_list_installed "$pkgix_prefix" | sort |
@@ -1440,7 +1449,7 @@ cmd_list() { #{{{
 						# package is required, continue while loop.
 
 						for _pkgix_prefix in "$@"; do
-							[[ -d "$_pkgix_prefix" ]] || continue && _pkgix_prefix="$(cd "$_pkgix_prefix" && pwd)"
+							[[ -d "$_pkgix_prefix" ]] || continue && _pkgix_prefix="$(abspath "$_pkgix_prefix")"
 							db_list_installed "$_pkgix_prefix" |
 							while read _pkg_name; do
 								set_db_vars "$_pkgix_prefix" "$_pkg_name"
@@ -1488,12 +1497,12 @@ cmd_show() { #{{{
 	local pkgix_prefix
 	for pkg_name in "$@"; do
 		for pkgix_prefix in "${pkgix_prefixes[@]}"; do
+			pkgix_prefix="$(abspath "$pkgix_prefix")"
 			if [[ ! -d "$pkgix_prefix" ]]; then
 				error_printf $"'%s' is not a valid directory!\n" "$pkgix_prefix"
 				exit $EXIT_ERR
 			fi
 
-			pkgix_prefix="$(cd "$pkgix_prefix" && pwd)"
 			set_db_vars "$pkgix_prefix" "$pkg_name"
 
 			if pkg_db_isinstalled "$pkgix_prefix" "$pkg_name"; then
@@ -1828,6 +1837,11 @@ run_cmd() { #{{{
 	case "$cmd" in
 		install|remove)
 			if [[ -z "${PKGIX_PREFIX:-}" ]]; then
+				if [[ -z "${1:-}" ]]; then
+					error_printf $"You need to specify a prefix!\n"
+					exit $EXIT_ERR
+				fi
+
 				cmd_$cmd "$@"
 			else
 				# Commands which can only accept one prefix, pass first one only
@@ -1838,6 +1852,17 @@ run_cmd() { #{{{
 			;;
 		upgrade|list|show|showenv|chenv)
 			if [[ -z "${PKGIX_PREFIX:-}" ]]; then
+				case "$cmd" in
+					# List of commands which are useful without a prefix
+					showenv|chenv) ;;
+					*)
+						if [[ -z "${1:-}" ]]; then
+							error_printf $"You need to specify at least one prefix!\n"
+							exit $EXIT_ERR
+						fi
+						;;
+				esac
+
 				cmd_$cmd "$@"
 			else
 				local o_IFS="$IFS" ; IFS=":"
