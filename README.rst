@@ -21,7 +21,7 @@ It is possible to run ``pkgix`` directly, if you provide a valid repository.
 
 By default pkgix looks for a repository in ``~/pkgix-repo/pkgs``. Repositories
 can be specified using the ``-r`` flag, but it is recommended to export the
-repository URL/path with ``PKGIX_REPO_URLS="<repo-urls...>"`` (separated by ``;``).
+repository URL/path with ``PKGIX_REPOS="<repos...>"`` (separated by ``;``).
 See the Repositories section below for list of known repositories.
 
 Recommended:

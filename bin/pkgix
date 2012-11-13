@@ -63,9 +63,9 @@ readonly RET_OK RET_ERR RET_INVALID_OPTION RET_USER_ABORT
 # PKGIXRC: RC-file, which is sourced and can be used to set configurable
 # variables.
 #
-# PKGIX_REPO_URLS: List of repo-urls; either a URL_SEP separated string of
-# repo-urls, or an array. Note that additional URLs specified with `-r` are
-# prepended if this is a string, and appended if it's an array.
+# PKGIX_REPOS: List of repository URLs; either a URL_SEP separated string of
+# URLs or an array. Note that additional URLs specified with `-r` are prepended
+# if this is a string, and appended if it's an array.
 #
 # PKGIX_SHELL: Which shell should be invoked for chenv and is also used to
 # determine the showenv format.
@@ -77,11 +77,12 @@ readonly RET_OK RET_ERR RET_INVALID_OPTION RET_USER_ABORT
 # PKGIX_UPGRADE_IGNORE: An array of package names, which should be ignored on
 # upgrade. Can only be set via the RC-file.
 #
-# PKGIX_ROOT: If set, PKGIX_ROOT is being used as the default root (no need to
+# PKGIX_PREFIX: If set, PKGIX_PREFIX is being used as the default prefix (no need to
 # specify for each command).
 #
 # PKGIX_BUILD_DIR: If set, uses ${PKGIX_BUILD_DIR}/{pkgix-build,pkgix-install}
-# to build packages in, instead of default <prefix-root>/{.pkgix-build,.pkgix-install}.
+# to build packages in, instead of the default of
+# <prefix>/{.pkgix-build,.pkgix-install}.
 #
 : ${PKGIXRC:="${HOME}/.${PROGNAME}rc"}
 
@@ -102,11 +103,11 @@ PKGIX_UPGRADE_IGNORE=()
 : ${PKGIX_FETCH:="wget -O %s"}
 : ${PKGIX_COLOR:=1}
 
-# PKGIX_REPO_URLS must be declared; check with declare -p, instead of ${..:-},
+# PKGIX_REPOS must be declared; check with declare -p, instead of ${..:-},
 # so that an empty array will not be assigned anything else (in this case the
 # first element would be set to the default).
-if ! declare -p PKGIX_REPO_URLS &> /dev/null; then
-	[[ -d "${HOME}/${PROGNAME}-repo/pkgs" ]] && PKGIX_REPO_URLS="${HOME}/${PROGNAME}-repo/pkgs" || PKGIX_REPO_URLS=""
+if ! declare -p PKGIX_REPOS &> /dev/null; then
+	[[ -d "${HOME}/${PROGNAME}-repo/pkgs" ]] && PKGIX_REPOS="${HOME}/${PROGNAME}-repo/pkgs" || PKGIX_REPOS=""
 fi
 
 #============================================================================
@@ -171,7 +172,7 @@ else
 fi
 
 #============================================================================
-# log_printf pkgix_root args...
+# log_printf pkgix_prefix args...
 #
 log_printf() { #{{{
 	local log_file="${1}/${LOG_FILE}"
@@ -258,14 +259,14 @@ case "$OSTYPE" in #{{{
 esac #}}}
 
 #============================================================================
-# lock_root pkgix_root
-# Checks for existing lock, creates a lock file in pkgix_root if not locked.
+# lock_prefix pkgix_prefix
+# Checks for existing lock, creates a lock file in pkgix_prefix if not locked.
 #
 # Should not call from subshells!
 #
-lock_root() { #{{{
-	local pkgix_root="$(cd "$1" && pwd)"
-	local lock_file="${pkgix_root}/${LOCK_FILE}"
+lock_prefix() { #{{{
+	local pkgix_prefix="$(cd "$1" && pwd)"
+	local lock_file="${pkgix_prefix}/${LOCK_FILE}"
 	if [[ -f "$lock_file" ]]; then
 		error_printf $"%s exists!\n" "$lock_file"
 		return $RET_ERR
@@ -273,16 +274,16 @@ lock_root() { #{{{
 
 	[[ ! -d "${lock_file%/*}" ]] && mkdir -p "${lock_file%/*}" || :
 	: > "$lock_file"
-	trap "unlock_root '${pkgix_root}'" EXIT
+	trap "unlock_prefix '${pkgix_prefix}'" EXIT
 	return $RET_OK
 } #}}}
 
 #============================================================================
-# unlock_root pkgix_root
+# unlock_prefix pkgix_prefix
 #
-unlock_root() { #{{{
-	local pkgix_root="$(cd "$1" && pwd)"
-	local lock_file="${pkgix_root}/${LOCK_FILE}"
+unlock_prefix() { #{{{
+	local pkgix_prefix="$(cd "$1" && pwd)"
+	local lock_file="${pkgix_prefix}/${LOCK_FILE}"
 	rm "$lock_file"
 	trap - EXIT
 } #}}}
@@ -436,30 +437,30 @@ prompt_continue() { #{{{
 } #}}}
 
 #============================================================================
-# export_env pkgix_root
+# export_env pkgix_prefix
 #
 export_env() { #{{{
 	[[ ! -d "${1:-}" ]] && return $RET_ERR
-	local pkgix_root="$(cd "$1" && pwd)"
+	local pkgix_prefix="$(cd "$1" && pwd)"
 
-	if [[ -z "${PKGIX_ROOT:-}" ]]; then
-		# Export so calls to pkgix don't need the root; appending, so that 
-		# installing takes the first root.
-		export PKGIX_ROOT="$pkgix_root"
+	if [[ -z "${PKGIX_PREFIX:-}" ]]; then
+		# Export so calls to pkgix don't need the prefix; appending, so that 
+		# installing takes the first prefix.
+		export PKGIX_PREFIX="$pkgix_prefix"
 	else
-		# Check if this has already been exported
-		# Also check CPATH, as I don't expect a user to set it for a pkgix root.
-		[[ "$PKGIX_ROOT" =~ ^(.*:)?"${pkgix_root}"(:.*)?$ &&
-			"${CPATH:-}" =~ ^(.*:)?"${pkgix_root}"/include(:.*)?$ ]] && return $RET_OK
+		# Check if this has already been exported Also check CPATH, as I don't
+		# expect a user to have set it for a prefix.
+		[[ "$PKGIX_PREFIX" =~ ^(.*:)?"${pkgix_prefix}"(:.*)?$ &&
+			"${CPATH:-}" =~ ^(.*:)?"${pkgix_prefix}"/include(:.*)?$ ]] && return $RET_OK
 
-		export PKGIX_ROOT="$PKGIX_ROOT:${pkgix_root}"
+		export PKGIX_PREFIX="$PKGIX_PREFIX:${pkgix_prefix}"
 	fi
 
-	verbose_printf $"Exporting environment: %s\n" "$pkgix_root"
+	verbose_printf $"Exporting environment: %s\n" "$pkgix_prefix"
 
 	local base_path
 	local library_path
-	for base_path in "${pkgix_root}" "${pkgix_root}/usr"; do
+	for base_path in "${pkgix_prefix}" "${pkgix_prefix}/usr"; do
 
 		library_path="${base_path}/lib"
 
@@ -521,19 +522,19 @@ export_env() { #{{{
 } #}}}
 
 #============================================================================
-# cmd_showenv pkgix_root...
+# cmd_showenv pkgix_prefix...
 #
 cmd_showenv() { #{{{
-	local pkgix_root
-	for pkgix_root in "$@"; do
-		export_env "$pkgix_root" || :
+	local pkgix_prefix
+	for pkgix_prefix in "$@"; do
+		export_env "$pkgix_prefix" || :
 	done
 
 	# See export_env for why we are not exporting LD_LIBRARY_PATH
 
 	case "$PKGIX_SHELL" in
 		*csh)
-			[[ -n "${PKGIX_ROOT:-}" ]] && echo "setenv PKGIX_ROOT \"$PKGIX_ROOT\"" || :
+			[[ -n "${PKGIX_PREFIX:-}" ]] && echo "setenv PKGIX_PREFIX \"$PKGIX_PREFIX\"" || :
 			[[ -n "${PATH:-}" ]] && echo "setenv PATH \"$PATH\"" || :
 			[[ -n "${LD_RUN_PATH:-}" ]] && echo "setenv LD_RUN_PATH \"$LD_RUN_PATH\"" || :
 			[[ -n "${LIBRARY_PATH:-}" ]] && echo "setenv LIBRARY_PATH \"$LIBRARY_PATH\"" || :
@@ -542,7 +543,7 @@ cmd_showenv() { #{{{
 			;;
 		*)
 			# Assume sh compatible shell (bash, zsh, ..)
-			[[ -n "${PKGIX_ROOT:-}" ]] && echo "export PKGIX_ROOT=\"$PKGIX_ROOT\"" || :
+			[[ -n "${PKGIX_PREFIX:-}" ]] && echo "export PKGIX_PREFIX=\"$PKGIX_PREFIX\"" || :
 			[[ -n "${PATH:-}" ]] && echo "export PATH=\"$PATH\"" || :
 			[[ -n "${LD_RUN_PATH:-}" ]] && echo "export LD_RUN_PATH=\"$LD_RUN_PATH\"" || :
 			[[ -n "${LIBRARY_PATH:-}" ]] && echo "export LIBRARY_PATH=\"$LIBRARY_PATH\"" || :
@@ -588,11 +589,11 @@ source_pkg() { #{{{
 	local pkg_name="$1"
 	local pkg_file
 
-	# Don't set repo_url as local here, as it can then be used in the package
+	# Don't set repo as local here, as it can then be used in the package
 	# description files to get information about its source repository, and 
-	# e.g., download extra files such as patches from the repo.
-	for repo_url in "${PKGIX_REPO_URLS[@]:+${PKGIX_REPO_URLS[@]}}"; do
-		pkg_file="${repo_url}/$pkg_name"
+	# e.g., download extra files such as patches from the repository.
+	for repo in "${PKGIX_REPOS[@]:+${PKGIX_REPOS[@]}}"; do
+		pkg_file="${repo}/$pkg_name"
 
 		case "$pkg_file" in
 			http://*|https://*|ftp://*)
@@ -622,7 +623,7 @@ source_pkg() { #{{{
 } #}}}
 
 #============================================================================
-# sourced_pkg_call funcname [pkgix_root [install_dir]]
+# sourced_pkg_call funcname [pkgix_prefix [install_dir]]
 # Wrap sourced function call execution.
 #
 # Disable 'nounset' for calling sourced functions, as the complexity of package
@@ -630,12 +631,12 @@ source_pkg() { #{{{
 # convenience. Enable inside the functions if neccessary.
 #
 # Makes the following extra variables available to package description file:
-#     prefix=pkgix_root
+#     prefix=pkgix_prefix
 #     destdir=install_dir
 #
 # Otherwise potentially useful variables which are available from parent scope:
-#     old_version - if package is being upgraded (see root_upgrade)
-#     repo_url - the URL where the package description file is located
+#     old_version - if package is being upgraded (see prefix_upgrade)
+#     repo - the URL where the package description file is located
 #
 # Due to the way BASH behaves, propagating even local variables from a parent
 # function to its children, ALL variables from parents will be available.
@@ -684,23 +685,23 @@ unset_sourced_pkg() { #{{{
 } #}}}
 
 #============================================================================
-# pkg_db_isinstalled pkgix_root pkg_name
+# pkg_db_isinstalled pkgix_prefix pkg_name
 #
 pkg_db_isinstalled() { #{{{
-	local pkgix_root="$1"
+	local pkgix_prefix="$1"
 	local pkg_name="$2"
-	local db_prefix="${pkgix_root}/${DB_PREFIX}/${pkg_name}"
+	local db_prefix="${pkgix_prefix}/${DB_PREFIX}/${pkg_name}"
 
 	[[ -f "${db_prefix}/version" && -f "${db_prefix}/files" ]]
 } #}}}
 
 #============================================================================
-# set_db_vars pkgix_root pkg_name
+# set_db_vars pkgix_prefix pkg_name
 #
 set_db_vars() { #{{{
-	local pkgix_root="$1"
+	local pkgix_prefix="$1"
 	local pkg_name="$2"
-	db_prefix="${pkgix_root}/${DB_PREFIX}/${pkg_name}"
+	db_prefix="${pkgix_prefix}/${DB_PREFIX}/${pkg_name}"
 	db_files_file="${db_prefix}/files"
 	db_backup_file="${db_prefix}/files.backup"
 	db_version_file="${db_prefix}/version"
@@ -719,17 +720,17 @@ unset_db_vars() { #{{{
 } #}}}
 
 #============================================================================
-# pkg_db_install pkgix_root pkg_name
+# pkg_db_install pkgix_prefix pkg_name
 #
 pkg_db_install() { #{{{
-	local pkgix_root="$1"
+	local pkgix_prefix="$1"
 	local pkg_name="$2"
 	local reason="$3"
 	local staging_files_file="$4"
 	local pkgnew_files_file="$5"
 	local staging_backup_file="$6"
 
-	set_db_vars "$pkgix_root" "$pkg_name"
+	set_db_vars "$pkgix_prefix" "$pkg_name"
 
 	# Create installed database folders
 	mkdir -p "${db_prefix}"
@@ -774,7 +775,7 @@ pkg_db_install() { #{{{
 	# As the entries are not deleted upon removal, over time, a dependence ordering
 	# is being built, so that if removed packages are reinstalled, upgrading still
 	# works as before.
-	local db_file="${pkgix_root}/${DB_PREFIX}.db"
+	local db_file="${pkgix_prefix}/${DB_PREFIX}.db"
 
 	if [[ -f "$db_file" ]] && grep -q "^.|${pkg_name}$" "$db_file"; then
 		sed -i "s:^.|${pkg_name}$:i|${pkg_name}:" "$db_file"
@@ -798,7 +799,7 @@ unset_db_info() { #{{{
 } #}}}
 
 #============================================================================
-# pkg_db_info_query pkgix_root pkg_name property [default]
+# pkg_db_info_query pkgix_prefix pkg_name property [default]
 #
 # Only use this function to query a single property, as it would be inefficient
 # for querying multiple properties in sequence; for this source the db_info_file
@@ -808,7 +809,7 @@ unset_db_info() { #{{{
 # type is an array.
 #
 pkg_db_info_query() { #{{{
-	local pkgix_root="$1"
+	local pkgix_prefix="$1"
 	local pkg_name="$2"
 	local property="$3"
 	local default="${4:-}"
@@ -816,7 +817,7 @@ pkg_db_info_query() { #{{{
 	(
 		local result
 
-		set_db_vars "$pkgix_root" "$pkg_name"
+		set_db_vars "$pkgix_prefix" "$pkg_name"
 
 		case "$property" in
 			version)
@@ -838,14 +839,14 @@ pkg_db_info_query() { #{{{
 # db_list_installed
 #
 db_list_installed() { #{{{
-	local pkgix_root="$1"
+	local pkgix_prefix="$1"
 
-	if [[ -f "${pkgix_root}/${DB_PREFIX}.db" ]]; then
+	if [[ -f "${pkgix_prefix}/${DB_PREFIX}.db" ]]; then
 		local pkg_name
-		grep "^i|" "${pkgix_root}/${DB_PREFIX}.db" |
+		grep "^i|" "${pkgix_prefix}/${DB_PREFIX}.db" |
 		while read pkg_name; do
 			pkg_name="${pkg_name##i|}"
-			if ! pkg_db_isinstalled "$pkgix_root" "$pkg_name"; then
+			if ! pkg_db_isinstalled "$pkgix_prefix" "$pkg_name"; then
 				warning_printf $"Inconsistent database entry: %s\n" "$pkg_name"
 				continue
 			fi
@@ -856,21 +857,21 @@ db_list_installed() { #{{{
 } #}}}
 
 #============================================================================
-# pkg_install pkgix_root pkg_name [reinstall [reason]]
+# pkg_install pkgix_prefix pkg_name [reinstall [reason]]
 #
 pkg_install() { #{{{
-	local pkgix_root="$1"
+	local pkgix_prefix="$1"
 	local pkg_name="$2"
 	local reinstall="${3:-0}"
 	local reason="${4:-$REASON_EXPLICIT}"
 	local is_reinstall=0
 
-	if [[ ! -d "$pkgix_root" ]]; then
-		error_printf $"'%s' is not a valid directory!\n" "$pkgix_root"
+	if [[ ! -d "$pkgix_prefix" ]]; then
+		error_printf $"'%s' is not a valid directory!\n" "$pkgix_prefix"
 		exit $EXIT_ERR
 	fi
 
-	if pkg_db_isinstalled "$pkgix_root" "$pkg_name"; then
+	if pkg_db_isinstalled "$pkgix_prefix" "$pkg_name"; then
 		if (( ! reinstall )); then
 			local _fn_printf
 			[[ "$reason" == "$REASON_EXPLICIT" ]] && _fn_printf="msg_printf" || _fn_printf="verbose_printf"
@@ -881,7 +882,7 @@ pkg_install() { #{{{
 
 			# Set reason based on user-override if provided, otherwise preserve previous reason
 			if (( ! arg_reason_dependency && ! arg_reason_explicit )); then
-				reason="$(pkg_db_info_query "$pkgix_root" "$pkg_name" "reason" "$reason")"
+				reason="$(pkg_db_info_query "$pkgix_prefix" "$pkg_name" "reason" "$reason")"
 			fi
 		fi
 	fi
@@ -940,10 +941,10 @@ pkg_install() { #{{{
 
 		if (( ! is_reinstall )) && sourced_pkg_call isinstalled; then
 			if (( ! arg_force )); then
-				msg_printf $"'%s' already available outside of '%s', skipping...\n" "$pkg_name" "$pkgix_root"
+				msg_printf $"'%s' already available outside of '%s', skipping...\n" "$pkg_name" "$pkgix_prefix"
 				exit $EXIT_OK
 			else
-				msg_printf $"Forcing installation of '%s', despite already available outside of '%s'...\n" "$pkg_name" "$pkgix_root"
+				msg_printf $"Forcing installation of '%s', despite already available outside of '%s'...\n" "$pkg_name" "$pkgix_prefix"
 			fi
 		fi
 
@@ -960,7 +961,7 @@ pkg_install() { #{{{
 			msg_printf "${Cgrn}%s (%s)${Crst} "$"resolving dependencies...\n" "$pkg_name" "${version:-}"
 			local dep_name
 			for dep_name in "${depends[@]:+${depends[@]}}"; do
-				pkg_install "$pkgix_root" "$dep_name" 0 "$REASON_DEPENDENCY"
+				pkg_install "$pkgix_prefix" "$dep_name" 0 "$REASON_DEPENDENCY"
 			done
 		else
 			warning_printf $"Ignoring dependencies.\n"
@@ -979,8 +980,8 @@ pkg_install() { #{{{
 			build_dir="${PKGIX_BUILD_DIR}/${PROGNAME}-build"
 			install_dir="${PKGIX_BUILD_DIR}/${PROGNAME}-install"
 		else
-			build_dir="${pkgix_root}/.${PROGNAME}-build"
-			install_dir="${pkgix_root}/.${PROGNAME}-install"
+			build_dir="${pkgix_prefix}/.${PROGNAME}-build"
+			install_dir="${pkgix_prefix}/.${PROGNAME}-install"
 		fi
 
 		mkdir -p "$build_dir"
@@ -996,14 +997,14 @@ pkg_install() { #{{{
 
 		trap "$trap_cmd" EXIT
 
-		if ! sourced_pkg_call build "$pkgix_root" "$install_dir"; then
+		if ! sourced_pkg_call build "$pkgix_prefix" "$install_dir"; then
 			error_printf $"Building '%s' failed! Aborting.\n" "$pkg_name"
 			exit $EXIT_ERR
 		fi
 
 		msg_printf "${Cgrn}%s (%s)${Crst} "$"installing into staging area...\n" "$pkg_name" "${version:-}"
 
-		if ! sourced_pkg_call installenv "$pkgix_root" "$install_dir"; then
+		if ! sourced_pkg_call installenv "$pkgix_prefix" "$install_dir"; then
 			error_printf $"Installation of '%s' failed! Aborting.\n" "$pkg_name"
 			exit $EXIT_ERR
 		fi
@@ -1013,15 +1014,15 @@ pkg_install() { #{{{
 			# a package depends on itself it is used rather than the system
 			# version (e.g., gcc, make).  If the system version should be used
 			# again: remove->install manually.
-			pkg_remove "$pkgix_root" "$pkg_name"
+			pkg_remove "$pkgix_prefix" "$pkg_name"
 		fi
 
 		# Create the list of files to be installed
 		local staging_files_file="${build_dir}/.staging.files"
 		: > "$staging_files_file"
-		if [[ -d "${install_dir}/${pkgix_root}" ]]; then
-			# As prefix is $pkgix_root, the complete folder structure from / is maintained inside $install_dir
-			find_printbase "${install_dir}/${pkgix_root}" > "$staging_files_file"
+		if [[ -d "${install_dir}/${pkgix_prefix}" ]]; then
+			# As prefix is $pkgix_prefix, the complete folder structure from / is maintained inside $install_dir
+			find_printbase "${install_dir}/${pkgix_prefix}" > "$staging_files_file"
 		else
 			warning_printf $"Package did not install any files.\n"
 		fi
@@ -1034,8 +1035,8 @@ pkg_install() { #{{{
 		local backup_checksum_sha256
 		for backup_path in "${backup[@]:+${backup[@]}}"; do
 			# Only do checksum based backup with real files
-			if [[ -f "${install_dir}/${pkgix_root}/${backup_path}" ]]; then
-				backup_checksum_sha256=($(sha256checksum "${install_dir}/${pkgix_root}/${backup_path}"))
+			if [[ -f "${install_dir}/${pkgix_prefix}/${backup_path}" ]]; then
+				backup_checksum_sha256=($(sha256checksum "${install_dir}/${pkgix_prefix}/${backup_path}"))
 				backup_checksum_sha256="${backup_checksum_sha256[0]}"
 			else
 				backup_checksum_sha256=""
@@ -1044,20 +1045,20 @@ pkg_install() { #{{{
 			echo "${backup_path}:${backup_checksum_sha256}" >> "$staging_backup_file"
 		done
 
-		# Check for file conflicts before copying from install_dir to pkgix_root
+		# Check for file conflicts before copying from install_dir to pkgix_prefix
 		local pkgnew_files_file="${build_dir}/.pkgnew.files"
 		: > "$pkgnew_files_file"
 		if (( ! arg_force )); then
 			msg_printf "${Cgrn}%s (%s)${Crst} "$"checking for file conflicts...\n" "$pkg_name" "${version:-}"
 
 			while read path; do
-				if [[ ! -d "${pkgix_root}/${path}" && -e "${pkgix_root}/${path}" ]]; then
+				if [[ ! -d "${pkgix_prefix}/${path}" && -e "${pkgix_prefix}/${path}" ]]; then
 					in_list "$path" "${forceinstall[@]:+${forceinstall[@]}}" && continue || :
 
-					# Only if the file already exists in pkgix_root and in
+					# Only if the file already exists in pkgix_prefix and in
 					# the backup list, should it be installed as a .pkgnew file.
 					if in_list "$path" "${backup[@]:+${backup[@]}}"; then
-						mv "${install_dir}/${pkgix_root}/${path}" "${install_dir}/${pkgix_root}/${path}.pkgnew"
+						mv "${install_dir}/${pkgix_prefix}/${path}" "${install_dir}/${pkgix_prefix}/${path}.pkgnew"
 						echo "${path}.pkgnew" >> "$pkgnew_files_file"
 						warning_printf $"Installing '%s' as '%s'\n" "$path" "${path}.pkgnew"
 						continue
@@ -1074,11 +1075,11 @@ pkg_install() { #{{{
 		msg_printf "${Cgrn}%s (%s)${Crst} "$"installing...\n" "$pkg_name" "${version:-}"
 
 		# Perform actual installation
-		if [[ -d "${install_dir}/${pkgix_root}" ]]; then
-			cp -a "${install_dir}/${pkgix_root}"/* "${pkgix_root}"
+		if [[ -d "${install_dir}/${pkgix_prefix}" ]]; then
+			cp -a "${install_dir}/${pkgix_prefix}"/* "${pkgix_prefix}"
 		fi
 
-		pkg_db_install "$pkgix_root" "$pkg_name" "$reason" \
+		pkg_db_install "$pkgix_prefix" "$pkg_name" "$reason" \
 			"$staging_files_file" "$pkgnew_files_file" "$staging_backup_file"
 
 		trap - EXIT
@@ -1089,32 +1090,32 @@ pkg_install() { #{{{
 		# Run postinstall if available
 		if type -p postinstall > /dev/null; then
 			msg_printf "${Cgrn}%s (%s)${Crst} "$"post-install...\n" "$pkg_name" "${version:-}"
-			if ! sourced_pkg_call postinstall "$pkgix_root"; then
+			if ! sourced_pkg_call postinstall "$pkgix_prefix"; then
 				warning_printf $"Post-installation step failed!\n"
 			fi
 		fi
 
 		msg_printf "${CgrnB}%s (%s)${Crst} "$"successfully installed.\n" "$pkg_name" "${version:-}"
-		log_printf "$pkgix_root" "%s (%s) "$"installed\n" "$pkg_name" "${version:-}"
+		log_printf "$pkgix_prefix" "%s (%s) "$"installed\n" "$pkg_name" "${version:-}"
 	) || exit $?
 
 	return $RET_OK
 } #}}}
 
 #============================================================================
-# pkg_remove pkgix_root pkg_name
+# pkg_remove pkgix_prefix pkg_name
 #
 pkg_remove() { #{{{
-	local pkgix_root="$1"
+	local pkgix_prefix="$1"
 	local pkg_name="$2"
 	local purge="${3:-0}"
 
-	if ! pkg_db_isinstalled "$pkgix_root" "$pkg_name"; then
+	if ! pkg_db_isinstalled "$pkgix_prefix" "$pkg_name"; then
 		error_printf $"'%s' not found!\n" "$pkg_name"
 		exit $EXIT_ERR
 	fi
 
-	set_db_vars "$pkgix_root" "$pkg_name"
+	set_db_vars "$pkgix_prefix" "$pkg_name"
 	local version="$(<"$db_version_file")"
 
 	# Create an empty files.backup file if it does not exist [backwards compatibility].
@@ -1132,8 +1133,8 @@ pkg_remove() { #{{{
 		backup_checksum_sha256="${backup_path##*:}"
 		backup_path="${backup_path%:*}"
 
-		if [[ -f "${pkgix_root}/${backup_path}" ]]; then
-			backup_checksum_sha256_f=($(sha256checksum "${pkgix_root}/${backup_path}"))
+		if [[ -f "${pkgix_prefix}/${backup_path}" ]]; then
+			backup_checksum_sha256_f=($(sha256checksum "${pkgix_prefix}/${backup_path}"))
 			backup_checksum_sha256_f="${backup_checksum_sha256_f[0]}"
 
 			# If file changed, exclude from deletion
@@ -1149,8 +1150,8 @@ pkg_remove() { #{{{
 	while read filename; do
 		# (1) First pass delete files and get directory depths
 
-		if [[ ! -d "${pkgix_root}/$filename" ]]; then
-			rm -f "${pkgix_root}/$filename"
+		if [[ ! -d "${pkgix_prefix}/$filename" ]]; then
+			rm -f "${pkgix_prefix}/$filename"
 		else
 			# Get path depth for sorting: If we don't do this, directories
 			# which are higher up in the hierarchy are being tried to be
@@ -1165,7 +1166,7 @@ pkg_remove() { #{{{
 	while read filename; do
 		# (2) Then check for empty directories and delete if empty
 		local filename="${filename#*:}"
-		remove_empty_dirs "${pkgix_root}/$filename" 0
+		remove_empty_dirs "${pkgix_prefix}/$filename" 0
 	done
 
 	# Remove meta files
@@ -1175,27 +1176,27 @@ pkg_remove() { #{{{
 	rm "$db_info_file"
 
 	# Clean up db
-	remove_empty_dirs "${pkgix_root}/${DB_PREFIX}"
+	remove_empty_dirs "${pkgix_prefix}/${DB_PREFIX}"
 
 	# Set package as removed
-	sed -i "s:^.|${pkg_name}$:r|${pkg_name}:" "${pkgix_root}/${DB_PREFIX}.db"
+	sed -i "s:^.|${pkg_name}$:r|${pkg_name}:" "${pkgix_prefix}/${DB_PREFIX}.db"
 
 	msg_printf "${CgrnB}%s (%s)${Crst} "$"successfully removed.\n" "$pkg_name" "$version"
-	log_printf "$pkgix_root" "%s (%s) "$"removed\n" "$pkg_name" "$version"
+	log_printf "$pkgix_prefix" "%s (%s) "$"removed\n" "$pkg_name" "$version"
 
 	unset_db_vars
 } #}}}
 
 #============================================================================
-# cmd_install pkgix_root pkg_name...
+# cmd_install pkgix_prefix pkg_name...
 #
 cmd_install() { #{{{
 	if [[ -z "${1:-}" ]]; then
-		error_printf $"You need to specify a pkgix root!\n"
+		error_printf $"You need to specify a prefix!\n"
 		exit $EXIT_ERR
 	fi
 
-	local pkgix_root="$1"
+	local pkgix_prefix="$1"
 	shift
 
 	if [[ -z "${1:-}" ]]; then
@@ -1203,52 +1204,52 @@ cmd_install() { #{{{
 		exit $EXIT_ERR
 	fi
 
-	if [[ ! -d "${pkgix_root}" ]]; then
-		if ! mkdir -p "${pkgix_root}" 2> /dev/null; then
-			error_printf $"Could not create directory '%s'!\n" "$pkgix_root"
+	if [[ ! -d "${pkgix_prefix}" ]]; then
+		if ! mkdir -p "${pkgix_prefix}" 2> /dev/null; then
+			error_printf $"Could not create directory '%s'!\n" "$pkgix_prefix"
 			exit $EXIT_ERR
 		fi
 	fi
 
-	pkgix_root="$(cd "$pkgix_root" && pwd)"
-	export_env "$pkgix_root"
+	pkgix_prefix="$(cd "$pkgix_prefix" && pwd)"
+	export_env "$pkgix_prefix"
 
-	lock_root "$pkgix_root" || exit $EXIT_ERR
+	lock_prefix "$pkgix_prefix" || exit $EXIT_ERR
 
-	msg_printf $"Installing into %s: %s\n" "$pkgix_root" "$*"
+	msg_printf $"Installing into %s: %s\n" "$pkgix_prefix" "$*"
 
 	prompt_continue || exit $EXIT_USER_ABORT
 
 	local pkg_name
 	for pkg_name in "$@"; do
-		pkg_install "$pkgix_root" "$pkg_name" "$arg_reinstall"
+		pkg_install "$pkgix_prefix" "$pkg_name" "$arg_reinstall"
 	done
 
-	unlock_root "$pkgix_root"
+	unlock_prefix "$pkgix_prefix"
 } #}}}
 
 #============================================================================
-# root_upgrade pkgix_root
+# prefix_upgrade pkgix_prefix
 #
-root_upgrade() { #{{{
-	local pkgix_root="$1"
+prefix_upgrade() { #{{{
+	local pkgix_prefix="$1"
 	shift
 
-	if [[ ! -f "${pkgix_root}/${DB_PREFIX}.db" ]]; then
-		warning_printf $"'%s' is not a valid %s root!\n" "$pkgix_root" "$PROGNAME"
+	if [[ ! -f "${pkgix_prefix}/${DB_PREFIX}.db" ]]; then
+		warning_printf $"'%s' is not a valid prefix!\n" "$pkgix_prefix"
 		return $RET_INVALID_OPTION
 	fi
 
-	pkgix_root="$(cd "$pkgix_root" && pwd)"
-	export_env "$pkgix_root"
+	pkgix_prefix="$(cd "$pkgix_prefix" && pwd)"
+	export_env "$pkgix_prefix"
 
-	lock_root "$pkgix_root" || exit $EXIT_ERR
+	lock_prefix "$pkgix_prefix" || exit $EXIT_ERR
 
-	msg_printf $"Upgrading %s ...\n" "$pkgix_root"
+	msg_printf $"Upgrading %s ...\n" "$pkgix_prefix"
 
 	prompt_continue || return $RET_USER_ABORT
 
-	db_list_installed "$pkgix_root" |
+	db_list_installed "$pkgix_prefix" |
 	while read pkg_name; do
 		# If package list provided, filter by that list
 		if (( $# > 0 )); then
@@ -1256,7 +1257,7 @@ root_upgrade() { #{{{
 		fi
 
 		(
-			old_version="$(pkg_db_info_query "$pkgix_root" "$pkg_name" "version")"
+			old_version="$(pkg_db_info_query "$pkgix_prefix" "$pkg_name" "version")"
 
 			if ! source_pkg "$pkg_name"; then
 				warning_printf $"Could not find package description file for '%s', skipping upgrade...\n" "$pkg_name"
@@ -1266,9 +1267,9 @@ root_upgrade() { #{{{
 				else
 					msg_printf "${Ccyn}"$"Upgrading""${Crst} %s (%s -> %s)" "$pkg_name" "$old_version" "${version:-}"
 					(( ! arg_reinstall )) && printf "\n" || printf " - "$"reinstall\n"
-					log_printf "$pkgix_root" $"upgrading"" %s (%s -> %s)\n" "$pkg_name" "$old_version" "${version:-}"
+					log_printf "$pkgix_prefix" $"upgrading"" %s (%s -> %s)\n" "$pkg_name" "$old_version" "${version:-}"
 
-					pkg_install "$pkgix_root" "$pkg_name" 1
+					pkg_install "$pkgix_prefix" "$pkg_name" 1
 				fi
 			else
 				msg_printf "%s (%s) "$"is up to date\n" "$pkg_name" "$old_version"
@@ -1278,31 +1279,31 @@ root_upgrade() { #{{{
 
 	msg_printf $"Done upgrading.\n"
 
-	unlock_root "$pkgix_root"
+	unlock_prefix "$pkgix_prefix"
 } #}}}
 
 #============================================================================
-# cmd_upgrade pkgix_root...
+# cmd_upgrade pkgix_prefix...
 #
 cmd_upgrade() { #{{{
 	if [[ -z "${1:-}" ]]; then
-		error_printf $"You need to specify at least one pkgix root!\n"
+		error_printf $"You need to specify at least one prefix!\n"
 		exit $EXIT_ERR
 	fi
 
-	local pkgix_roots=()
+	local pkgix_prefixes=()
 	while [[ -n "${1:-}" && "$1" != "--" ]]; do
-		pkgix_roots+=("$1")
+		pkgix_prefixes+=("$1")
 		shift || break
 	done
 	shift || :
 
-	local pkgix_root
+	local pkgix_prefix
 	local ret_code
-	for pkgix_root in "${pkgix_roots[@]}"; do
+	for pkgix_prefix in "${pkgix_prefixes[@]}"; do
 		# Run nested, not to pollute subsequent upgrades with export_env
 		# The environment should be set accordingly prior to upgrading!
-		( root_upgrade "$pkgix_root" "$@" ) && ret_code=$? || ret_code=$?
+		( prefix_upgrade "$pkgix_prefix" "$@" ) && ret_code=$? || ret_code=$?
 		if (( ret_code != RET_OK && ret_code != RET_INVALID_OPTION && ret_code != RET_USER_ABORT )); then
 			exit $EXIT_ERR
 		fi
@@ -1310,30 +1311,30 @@ cmd_upgrade() { #{{{
 } #}}}
 
 #============================================================================
-# cmd_remove pkgix_root pkg_name...
+# cmd_remove pkgix_prefix pkg_name...
 #
 cmd_remove() { #{{{
-	local pkgix_root="${1:-}"
+	local pkgix_prefix="${1:-}"
 	shift || { error_printf $"No targets specified!\n"; exit $EXIT_ERR; }
 
-	if [[ ! -d "$pkgix_root" ]]; then
-		error_printf $"'%s' is not a valid directory!\n" "$pkgix_root"
+	if [[ ! -d "$pkgix_prefix" ]]; then
+		error_printf $"'%s' is not a valid directory!\n" "$pkgix_prefix"
 		exit $EXIT_ERR
 	fi
 
-	pkgix_root="$(cd "$pkgix_root" && pwd)"
+	pkgix_prefix="$(cd "$pkgix_prefix" && pwd)"
 
-	lock_root "$pkgix_root" || exit $EXIT_ERR
+	lock_prefix "$pkgix_prefix" || exit $EXIT_ERR
 
-	msg_printf $"Removing from %s: %s\n" "$pkgix_root" "$*"
+	msg_printf $"Removing from %s: %s\n" "$pkgix_prefix" "$*"
 	prompt_continue || exit $EXIT_USER_ABORT
 	
 	local pkg_name
 	for pkg_name in "$@"; do
-		pkg_remove "$pkgix_root" "$pkg_name" "$arg_purge"
+		pkg_remove "$pkgix_prefix" "$pkg_name" "$arg_purge"
 	done
 
-	unlock_root "$pkgix_root"
+	unlock_prefix "$pkgix_prefix"
 } #}}}
 
 #============================================================================
@@ -1341,19 +1342,19 @@ cmd_remove() { #{{{
 #
 cmd_avail() { #{{{
 	if (( $# == 0 )); then
-		local repo_url
-		for repo_url in "${PKGIX_REPO_URLS[@]:+${PKGIX_REPO_URLS[@]}}"; do
-			(( ! arg_quiet )) && printf "%b" "${CbluB}-> ${CgrnB}${repo_url}${Crst}\n" 1>&2 || :
-			case "$repo_url" in
+		local repo
+		for repo in "${PKGIX_REPOS[@]:+${PKGIX_REPOS[@]}}"; do
+			(( ! arg_quiet )) && printf "%b" "${CbluB}-> ${CgrnB}${repo}${Crst}\n" 1>&2 || :
+			case "$repo" in
 				http://*|https://*|ftp://*)
 					(
-						if ! fetch_remote "${repo_url}/$REMOTE_AVAIL_FILE" "-" 2> /dev/null; then
-							warning_printf $"Fetching '%s' failed!\n" "${repo_url}/$REMOTE_AVAIL_FILE"
+						if ! fetch_remote "${repo}/$REMOTE_AVAIL_FILE" "-" 2> /dev/null; then
+							warning_printf $"Fetching '%s' failed!\n" "${repo}/$REMOTE_AVAIL_FILE"
 						fi
 					) |
 					while read pkg_short_info; do
 						if (( arg_quiet )); then
-							echo "$repo_url ${pkg_short_info%% *}"
+							echo "$repo ${pkg_short_info%% *}"
 						else
 							echo "$pkg_short_info"
 						fi
@@ -1361,17 +1362,17 @@ cmd_avail() { #{{{
 					;;
 				*)
 					# Do not show hidden files and do not descend into hidden folders.
-					# Need trailing slash, in case the repo_url is the path to a symlink.
-					find_printbase "${repo_url}/" ! \( -name ".*" -prune \) -a \( -type f \) 2> /dev/null | sort |
+					# Need trailing slash, in case the repo is the path to a symlink.
+					find_printbase "${repo}/" ! \( -name ".*" -prune \) -a \( -type f \) 2> /dev/null | sort |
 					while read pkg_name; do
 						if (( arg_quiet )); then
-							echo "$repo_url $pkg_name"
+							echo "$repo $pkg_name"
 						else
-							if is_pkg_pointer "${repo_url}/$pkg_name"; then
-								printf "%-42s %-18s %s\n" "$pkg_name" "->" "$(<"${repo_url}/$pkg_name")"
+							if is_pkg_pointer "${repo}/$pkg_name"; then
+								printf "%-42s %-18s %s\n" "$pkg_name" "->" "$(<"${repo}/$pkg_name")"
 							else
 								(
-									source "${repo_url}/$pkg_name"
+									source "${repo}/$pkg_name"
 									printf "%-42s %-18s %s\n" "$pkg_name" "${version:-}" "${description:-}"
 								)
 							fi
@@ -1385,7 +1386,7 @@ cmd_avail() { #{{{
 		for pkg_name in "$@"; do
 			(
 				if source_pkg "$pkg_name"; then
-					echo "$pkg_name (${version:-}): ${repo_url}"
+					echo "$pkg_name (${version:-}): ${repo}"
 					echo " Description  : ${description:-}"
 					if [[ -z "${metapkg:-}" ]]; then
 						echo " Website      : ${website:-}"
@@ -1407,18 +1408,18 @@ cmd_avail() { #{{{
 } #}}}
 
 #============================================================================
-# cmd_list pkgix_root...
+# cmd_list pkgix_prefix...
 #
 cmd_list() { #{{{
-	local pkgix_root
-	for pkgix_root in "$@"; do
-		[[ -d "$pkgix_root" ]] || continue && pkgix_root="$(cd "$pkgix_root" && pwd)"
-		(( ! arg_quiet )) && printf "%b" "${CbluB}-> ${CgrnB}${pkgix_root}${Crst}\n" 1>&2 || :
+	local pkgix_prefix
+	for pkgix_prefix in "$@"; do
+		[[ -d "$pkgix_prefix" ]] || continue && pkgix_prefix="$(cd "$pkgix_prefix" && pwd)"
+		(( ! arg_quiet )) && printf "%b" "${CbluB}-> ${CgrnB}${pkgix_prefix}${Crst}\n" 1>&2 || :
 
-		db_list_installed "$pkgix_root" | sort |
+		db_list_installed "$pkgix_prefix" | sort |
 		while read pkg_name; do
 			(
-				set_db_vars "$pkgix_root" "$pkg_name"
+				set_db_vars "$pkgix_prefix" "$pkg_name"
 
 				if (( ! arg_quiet || arg_list_explicit || arg_list_depends || arg_list_unrequired )); then
 					source "$db_info_file"
@@ -1434,21 +1435,21 @@ cmd_list() { #{{{
 
 				if (( arg_list_unrequired )); then
 					(
-						# Check if any package in any provided pkgix_root
+						# Check if any package in any provided pkgix_prefix
 						# depends on the current package; if the current
 						# package is required, continue while loop.
 
-						for _pkgix_root in "$@"; do
-							[[ -d "$_pkgix_root" ]] || continue && _pkgix_root="$(cd "$_pkgix_root" && pwd)"
-							db_list_installed "$_pkgix_root" |
+						for _pkgix_prefix in "$@"; do
+							[[ -d "$_pkgix_prefix" ]] || continue && _pkgix_prefix="$(cd "$_pkgix_prefix" && pwd)"
+							db_list_installed "$_pkgix_prefix" |
 							while read _pkg_name; do
-								set_db_vars "$_pkgix_root" "$_pkg_name"
+								set_db_vars "$_pkgix_prefix" "$_pkg_name"
 
 								# Tried using grep here, but the BASH-only
 								# version is roughly 2x faster.
 								source "$db_info_file"
 								if in_list "$pkg_name" "${depends[@]:+${depends[@]}}"; then
-									verbose_printf $"'%s: %s' required by '%s: %s'\n" "$pkgix_root" "$pkg_name" "$_pkgix_root" "$_pkg_name"
+									verbose_printf $"'%s: %s' required by '%s: %s'\n" "$pkgix_prefix" "$pkg_name" "$_pkgix_prefix" "$_pkg_name"
 									exit $EXIT_ERR
 								fi
 							done || exit $?
@@ -1457,7 +1458,7 @@ cmd_list() { #{{{
 				fi
 
 				if (( arg_quiet )); then
-					echo "$pkgix_root $pkg_name"
+					echo "$pkgix_prefix $pkg_name"
 				else
 					printf "%-42s %-18s %s\n" "${pkg_name}" "$(<$db_version_file)" "${description:-}"
 				fi
@@ -1467,45 +1468,45 @@ cmd_list() { #{{{
 } #}}}
 
 #============================================================================
-# cmd_show pkgix_root pkg_name...
+# cmd_show pkgix_prefix pkg_name...
 #
 cmd_show() { #{{{
-	local pkgix_roots=()
+	local pkgix_prefixes=()
 
 	if in_list "--" "$@"; then
 		while [[ "$1" != "--" ]]; do
-			pkgix_roots+=("$1")
+			pkgix_prefixes+=("$1")
 			shift || break
 		done
 	else
-		pkgix_roots+=("${1:-}")
+		pkgix_prefixes+=("${1:-}")
 	fi
 
 	shift || { error_printf $"No targets specified!\n"; exit $EXIT_ERR; }
 
 	local pkg_name
-	local pkgix_root
+	local pkgix_prefix
 	for pkg_name in "$@"; do
-		for pkgix_root in "${pkgix_roots[@]}"; do
-			if [[ ! -d "$pkgix_root" ]]; then
-				error_printf $"'%s' is not a valid directory!\n" "$pkgix_root"
+		for pkgix_prefix in "${pkgix_prefixes[@]}"; do
+			if [[ ! -d "$pkgix_prefix" ]]; then
+				error_printf $"'%s' is not a valid directory!\n" "$pkgix_prefix"
 				exit $EXIT_ERR
 			fi
 
-			pkgix_root="$(cd "$pkgix_root" && pwd)"
-			set_db_vars "$pkgix_root" "$pkg_name"
+			pkgix_prefix="$(cd "$pkgix_prefix" && pwd)"
+			set_db_vars "$pkgix_prefix" "$pkg_name"
 
-			if pkg_db_isinstalled "$pkgix_root" "$pkg_name"; then
+			if pkg_db_isinstalled "$pkgix_prefix" "$pkg_name"; then
 				if (( arg_list_files )); then
 					local prefix_line=""
 					(( ! arg_quiet )) && prefix_line="$pkg_name " || :
 					local path
 					while read path; do
-						[[ -n "$path" ]] && echo "${prefix_line}${pkgix_root}/${path}" || :
+						[[ -n "$path" ]] && echo "${prefix_line}${pkgix_prefix}/${path}" || :
 					done < "$db_files_file"
 				else
 					source "$db_info_file"
-					echo "$pkg_name ($(<$db_version_file)): ${pkgix_root}"
+					echo "$pkg_name ($(<$db_version_file)): ${pkgix_prefix}"
 					echo " Description  : ${description:-}"
 					echo " Website      : ${website:-}"
 					echo " License      : ${license[*]:+${license[*]}}"
@@ -1517,7 +1518,7 @@ cmd_show() { #{{{
 					unset_db_info
 				fi
 
-				# found, stop searching further pkgix_roots
+				# found, stop searching further pkgix_prefixes
 				break
 			else
 				# indicate not yet found, continue search
@@ -1535,12 +1536,12 @@ cmd_show() { #{{{
 } #}}}
 
 #============================================================================
-# cmd_chenv pkgix_root...
+# cmd_chenv pkgix_prefix...
 #
 cmd_chenv() { #{{{
-	local pkgix_root
-	for pkgix_root in "$@"; do
-		export_env "$pkgix_root"
+	local pkgix_prefix
+	for pkgix_prefix in "$@"; do
+		export_env "$pkgix_prefix"
 	done
 
 	msg_printf $"Spawning shell\n"
@@ -1548,27 +1549,27 @@ cmd_chenv() { #{{{
 } #}}}
 
 #============================================================================
-# sanitize_repo_urls
-# Turn PKGIX_REPO_URLS into an array and sanitize some urls
+# sanitize_repos
+# Turn PKGIX_REPOS into an array and sanitize some URLs
 #
-sanitize_repo_urls() { #{{{
+sanitize_repos() { #{{{
 	# Check if it is already an array (user set in RC-file)
-	if [[ "$(declare -p PKGIX_REPO_URLS)" =~ ^"declare -a" ]]; then
-		local old_repo_urls=("${PKGIX_REPO_URLS[@]:+${PKGIX_REPO_URLS[@]}}")
+	if [[ "$(declare -p PKGIX_REPOS)" =~ ^"declare -a" ]]; then
+		local old_repos=("${PKGIX_REPOS[@]:+${PKGIX_REPOS[@]}}")
 	else
 		local o_IFS="$IFS" ; IFS="$URL_SEP"
-		local old_repo_urls=(${PKGIX_REPO_URLS[@]})
+		local old_repos=(${PKGIX_REPOS[@]})
 		IFS="$o_IFS" ; unset o_IFS
 	fi
 
-	PKGIX_REPO_URLS=()
+	PKGIX_REPOS=()
 
-	local url
-	for url in "${old_repo_urls[@]:+${old_repo_urls[@]}}"; do
-		[[ "$url" =~ ^file:// ]] && url="${url##file://}"
-		url=${url%%/}
+	local repo
+	for repo in "${old_repos[@]:+${old_repos[@]}}"; do
+		[[ "$repo" =~ ^file:// ]] && repo="${repo##file://}"
+		repo=${repo%%/}
 
-		PKGIX_REPO_URLS+=("${url}")
+		PKGIX_REPOS+=("${repo}")
 	done
 } #}}}
 
@@ -1578,7 +1579,7 @@ sanitize_repo_urls() { #{{{
 #
 prog_usage() { #{{{
 	if [[ -z "${1:-}" ]]; then
-		printf -- $"Usage: %s [-r|--repo-urls <repo-urls>] [-n|--noconfirm]\n\
+		printf -- $"Usage: %s [-r|--repo <repo>] [-n|--noconfirm]\n\
              [-v|--verbose] [--debug]\n\
              <command> [<args>]\n" "$PROGNAME"
 		echo
@@ -1594,7 +1595,7 @@ prog_usage() { #{{{
 		echo
 		printf -- $"Options:\n"
 		printf -- $"\
-    -r, --repo-urls\n\
+    -r, --repo\n\
         Specify additional package repository URLs; use '%s' to\n\
         separate multiple repositories. Currently supported protocols are:\n\
         file:// (default), http://, https://, ftp://\n" "$URL_SEP"
@@ -1627,9 +1628,9 @@ prog_usage() { #{{{
                      [--asdeps] [--asexplicit]\n" "$PROGNAME" "$1"
 
 				if [[ "$1" == "install" ]]; then
-					printf -- $"                     <pkgix-root> <pkgs>...\n"
+					printf -- $"                     <prefix> <pkgs>...\n"
 				else
-					printf -- $"                     <pkgix-roots>... [-- <pkgs>...]\n"
+					printf -- $"                     <prefixes>... [-- <pkgs>...]\n"
 				fi
 
 				echo
@@ -1637,7 +1638,7 @@ prog_usage() { #{{{
 				printf -- $"\
     -f, --force\n\
         Force installation of programs that are: already available outside of\n\
-        <pkgix-roots>; satisfied metapackages; incompatible with the current system;\n\
+        <prefixes>; satisfied metapackages; incompatible with the current system;\n\
         conflicting with already installed files.\n\
         Also forces overwriting files which were normally preserved (see backup).\n"
 				printf -- $"\
@@ -1673,7 +1674,7 @@ prog_usage() { #{{{
         Force removal of all installed files, even those marked for backup.\n"
 				;;
 			show)
-				printf -- $"Usage: %s %s [-l|--list] (<pkgix-roots>... --|<pkgix-root>) <pkgs>...\n" "$PROGNAME" "$1"
+				printf -- $"Usage: %s %s [-l|--list] (<prefixes>... --|<prefix>) <pkgs>...\n" "$PROGNAME" "$1"
 				echo
 				printf -- $"Options:\n"
 				printf -- $"\
@@ -1681,7 +1682,7 @@ prog_usage() { #{{{
         List installed package files.\n"
 				;;
 			list)
-				printf -- $"Usage: %s %s [-e|--explicit] [-d|--depends] [-u|--unrequired] <pkgix-roots>...\n" "$PROGNAME" "$1"
+				printf -- $"Usage: %s %s [-e|--explicit] [-d|--depends] [-u|--unrequired] <prefixes>...\n" "$PROGNAME" "$1"
 				echo
 				printf -- $"Options:\n"
 				printf -- $"\
@@ -1693,10 +1694,10 @@ prog_usage() { #{{{
 				printf -- $"\
     -u, --unrequired\n\
         List unrequired packages: packages not required by any other package;\n\
-        checks dependencies between all listed <pkgix-roots>.\n"
+        checks dependencies between all listed <prefixes>.\n"
 				;;
 			showenv|chenv)
-				printf -- $"Usage: %s %s <pkgix-roots>...\n" "$PROGNAME" "$1"
+				printf -- $"Usage: %s %s <prefixes>...\n" "$PROGNAME" "$1"
 				;;
 			avail)
 				printf -- $"Usage: %s %s [<pkgs>...]\n" "$PROGNAME" "$1"
@@ -1787,14 +1788,14 @@ arg_debug=0
 
 while :; do
 	case "${1:-}" in
-		-r|--repo-urls)
+		-r|--repo)
 			[[ -z "${2:-}" ]] && { prog_usage; exit $EXIT_INVALID_OPTION; }
-			if [[ "$(declare -p PKGIX_REPO_URLS)" =~ ^"declare -a" ]]; then
+			if [[ "$(declare -p PKGIX_REPOS)" =~ ^"declare -a" ]]; then
 				# append
-				PKGIX_REPO_URLS+=("$2")
+				PKGIX_REPOS+=("$2")
 			else
 				# prepend
-				PKGIX_REPO_URLS="${2}${URL_SEP}${PKGIX_REPO_URLS}"
+				PKGIX_REPOS="${2}${URL_SEP}${PKGIX_REPOS}"
 			fi
 			shift
 			;;
@@ -1815,7 +1816,7 @@ while :; do
 	shift
 done
 
-sanitize_repo_urls
+sanitize_repos
 cmd="${1:-}"
 shift || :
 
@@ -1826,26 +1827,26 @@ shift || :
 run_cmd() { #{{{
 	case "$cmd" in
 		install|remove)
-			if [[ -z "${PKGIX_ROOT:-}" ]]; then
+			if [[ -z "${PKGIX_PREFIX:-}" ]]; then
 				cmd_$cmd "$@"
 			else
-				# Commands which can only accept one root, pass first one only
+				# Commands which can only accept one prefix, pass first one only
 				# Remove leading ':'
-				local args_root="${PKGIX_ROOT##:}"
-				cmd_$cmd "${args_root%%:*}" "$@"
+				local args_prefix="${PKGIX_PREFIX##:}"
+				cmd_$cmd "${args_prefix%%:*}" "$@"
 			fi
 			;;
 		upgrade|list|show|showenv|chenv)
-			if [[ -z "${PKGIX_ROOT:-}" ]]; then
+			if [[ -z "${PKGIX_PREFIX:-}" ]]; then
 				cmd_$cmd "$@"
 			else
 				local o_IFS="$IFS" ; IFS=":"
-				local args_root=(${PKGIX_ROOT[@]})
+				local args_prefix=(${PKGIX_PREFIX[@]})
 				IFS="$o_IFS" ; unset o_IFS
 
 				case "$cmd" in
-					show|upgrade) cmd_$cmd "${args_root[@]}" -- "$@" ;;
-					*) cmd_$cmd "${args_root[@]}" "$@" ;;
+					show|upgrade) cmd_$cmd "${args_prefix[@]}" -- "$@" ;;
+					*) cmd_$cmd "${args_prefix[@]}" "$@" ;;
 				esac
 			fi
 			;;

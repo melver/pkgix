@@ -27,13 +27,13 @@ if [[ -z "$PKGIX_SHELL" ]]; then
 fi
 
 pkgix-activate() {
-	if [[ -n "$PKGIX_ROOT" ]]; then
+	if [[ -n "$PKGIX_PREFIX" ]]; then
 		echo "You need to deactivate your current prefix environment with 'pkgix-deactivate' first."
 		return 1
 	fi
 
 	if [[ "$#" == "0" ]]; then
-		echo "Need at least one pkgix root!"
+		echo "Need at least one prefix!"
 		return 1
 	fi
 
@@ -49,7 +49,7 @@ pkgix-activate() {
 }
 
 pkgix-deactivate() {
-	unset PKGIX_ROOT
+	unset PKGIX_PREFIX
 
 	export PATH="$_OLD_PATH"
 	export LD_RUN_PATH="$_OLD_LD_RUN_PATH"
