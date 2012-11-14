@@ -58,7 +58,33 @@ RET_USER_ABORT=3
 readonly RET_OK RET_ERR RET_INVALID_OPTION RET_USER_ABORT
 
 #============================================================================
+# abspath path
+# Get absolute path; normalizes the path if dir or file exists.
+#
+# Declared here, as it can then be used in defining default values for
+# configurable variables, or can even be used in the RC-file.
+#
+abspath() { #{{{
+	local path="$1"
+
+	if [[ -d "$path" ]]; then
+		( cd "$path" && pwd )
+	elif [[ -f "$path" ]]; then
+		echo "$( cd "${path%/*}" && pwd )/${path##*/}"
+	else
+		# Doesn't seem to exist, try best guess
+		if [[ "$path" =~ ^/ ]]; then
+			echo "$path"
+		else
+			echo "$(pwd)/${path}"
+		fi
+	fi
+} #}}}
+
+#============================================================================
 # Configurable variables, settable via environment or RC-file
+#
+## Variables with a default value (see below):
 #
 # PKGIXRC: RC-file, which is sourced and can be used to set configurable
 # variables.
@@ -76,6 +102,8 @@ readonly RET_OK RET_ERR RET_INVALID_OPTION RET_USER_ABORT
 #
 # PKGIX_UPGRADE_IGNORE: An array of package names, which should be ignored on
 # upgrade. Can only be set via the RC-file.
+#
+## Variables without a default value:
 #
 # PKGIX_PREFIX: If set, PKGIX_PREFIX is being used as the default prefix (no need to
 # specify for each command).
@@ -111,28 +139,6 @@ if ! declare -p PKGIX_REPOS &> /dev/null; then
 fi
 
 #============================================================================
-# abspath path
-# Get absolute path.
-# Normalizes the path if dir or file exists.
-#
-abspath() { #{{{
-	local path="$1"
-
-	if [[ -d "$path" ]]; then
-		( cd "$path" && pwd )
-	elif [[ -f "$path" ]]; then
-		echo "$( cd "${path%/*}" && pwd )/${path##*/}"
-	else
-		# Doesn't seem to exist, try best guess
-		if [[ "$path" =~ ^/ ]]; then
-			echo "$path"
-		else
-			echo "$(pwd)/${path}"
-		fi
-	fi
-} #}}}
-
-#============================================================================
 # Setup gettext ($"...")
 # Need to set TEXTDOMAIN first, then TEXTDOMAINDIR -- see BASH 4.2 source
 #
@@ -143,7 +149,7 @@ TEXTDOMAINDIR="$(abspath "${0%/*}/../share/locale")"
 # Color config
 #
 # Check if color is enabled and we have stderr/in on terminal
-if [[ "$PKGIX_COLOR" != "0" && -t 2 && -t 1 ]]; then
+if [[ "$PKGIX_COLOR" != "0" && -t 2 && -t 1 ]]; then # {{{
 	# Check if we have tput
 	if type -p tput > /dev/null; then
 		Crst="$(tput sgr0)"
@@ -191,17 +197,7 @@ else
 	CbluB=
 	CpurB=
 	CcynB=
-fi
-
-#============================================================================
-# log_printf pkgix_prefix args...
-#
-log_printf() { #{{{
-	local log_file="${1}/${LOG_FILE}"
-	shift
-	[[ ! -d "${log_file%/*}" ]] && mkdir -p "${log_file%/*}" || :
-	printf "[$(date)] ""$@" >> "$log_file"
-} #}}}
+fi # }}}
 
 #============================================================================
 # printf wrappers
@@ -223,7 +219,7 @@ warning_printf() { #{{{
 } #}}}
 
 #============================================================================
-# Sanitize environment variables (needs error_printf)
+# Sanitize environment variables (done here, as *_printf may be needed)
 #
 if [[ -n "${PKGIX_BUILD_DIR:-}" ]]; then
 	if [[ ! -d "$PKGIX_BUILD_DIR" ]]; then
@@ -233,6 +229,16 @@ if [[ -n "${PKGIX_BUILD_DIR:-}" ]]; then
 
 	PKGIX_BUILD_DIR="$(abspath "$PKGIX_BUILD_DIR")"
 fi
+
+#============================================================================
+# log_printf pkgix_prefix args...
+#
+log_printf() { #{{{
+	local log_file="${1}/${LOG_FILE}"
+	shift
+	[[ ! -d "${log_file%/*}" ]] && mkdir -p "${log_file%/*}" || :
+	printf "[$(date)] ""$@" >> "$log_file"
+} #}}}
 
 #============================================================================
 # in_list needle hay...
@@ -1226,16 +1232,17 @@ cmd_install() { #{{{
 			error_printf $"Could not create directory '%s'!\n" "$pkgix_prefix"
 			exit $EXIT_ERR
 		fi
+
+		# dir exists now, normalize path just in case it contained `..`s
 		pkgix_prefix="$(abspath "$1")"
 	fi
-
-	export_env "$pkgix_prefix"
 
 	lock_prefix "$pkgix_prefix" || exit $EXIT_ERR
 
 	msg_printf $"Installing into %s: %s\n" "$pkgix_prefix" "$*"
-
 	prompt_continue || exit $EXIT_USER_ABORT
+
+	export_env "$pkgix_prefix"
 
 	local pkg_name
 	for pkg_name in "$@"; do
@@ -1257,13 +1264,12 @@ prefix_upgrade() { #{{{
 		return $RET_INVALID_OPTION
 	fi
 
-	export_env "$pkgix_prefix"
-
 	lock_prefix "$pkgix_prefix" || exit $EXIT_ERR
 
 	msg_printf $"Upgrading %s ...\n" "$pkgix_prefix"
-
 	prompt_continue || return $RET_USER_ABORT
+
+	export_env "$pkgix_prefix"
 
 	db_list_installed "$pkgix_prefix" |
 	while read pkg_name; do
@@ -1727,6 +1733,9 @@ repositories is displayed.\n"
 	fi
 } #}}}
 
+#============================================================================
+# prog_version
+#
 prog_version() { #{{{
 	echo "$PROGNAME $PROG_VERSION"
 	echo
@@ -1751,6 +1760,10 @@ trap_ERR() { #{{{
 	exit 42
 } #}}}
 
+#============================================================================
+# reset_traps
+# Initializes traps
+#
 reset_traps() { #{{{
 	trap '{ msg_printf $"TERM signal caught, exiting...\n"; exit 42; }' TERM HUP QUIT
 	trap '{ msg_printf $"User aborted.\n"; exit 42; }' INT
