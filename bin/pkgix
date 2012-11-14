@@ -465,6 +465,24 @@ prompt_continue() { #{{{
 } #}}}
 
 #============================================================================
+# source_prefix_rc pkgix_prefix
+# Source a prefix-specific RC-file.
+#
+# If the RC-file contains variables which are exported then they will be usable
+# in e.g., chenv, while compiling; otherwise, the values set will only be
+# valid in this session, but can be used to provide extra variables to
+# package description files.
+#
+prefix_rc_sourced=0
+source_prefix_rc() { #{{{
+	(( prefix_rc_sourced )) && return || :
+	local pkgix_prefix="$1"
+	[[ ! -r "${pkgix_prefix}/etc/${PROGNAME}rc" ]] && return || :
+	source "${pkgix_prefix}/etc/${PROGNAME}rc"
+	prefix_rc_sourced=1
+} #}}}
+
+#============================================================================
 # export_env pkgix_prefix [reset]
 #
 __old_env_saved=0
@@ -473,6 +491,8 @@ export_env() { #{{{
 	local reset="${2:-0}"
 
 	[[ ! -d "$pkgix_prefix" ]] && return $RET_ERR
+
+	source_prefix_rc "$pkgix_prefix"
 
 	if (( ! __old_env_saved )); then
 		__old_env_saved=1
@@ -1303,6 +1323,10 @@ prefix_upgrade() { #{{{
 
 		(
 			old_version="$(pkg_db_info_query "$pkgix_prefix" "$pkg_name" "version")"
+
+			# Source prefix RC-file, so that we could use PKGIX_REPOS from this
+			# RC-file in source_pkg, if set. Similiarly for PKGIX_UPGRADE_IGNORE.
+			source_prefix_rc "$pkgix_prefix"
 
 			if ! source_pkg "$pkg_name"; then
 				warning_printf $"Could not find package description file for '%s', skipping upgrade...\n" "$pkg_name"
