@@ -272,32 +272,75 @@ in_list() { #{{{
 #============================================================================
 # OS dependent functions, detect platform and set variables accordingly
 #
-case "$OSTYPE" in #{{{
-	*freebsd*|*FreeBSD*)
-		ostype="freebsd"
-		architecture="$(uname -m)"
+## pkgix tries to find defaults, but can be set from environment:
+#
+# CARCH: processor architecture, as the OS identified it
+# CHOST: <arch>-<vendor>-<OS>-<libc>
+#
+## Always set by pkgix:
+#
+# ostype: consistend value representing the OS, regardless of variation
+# architecture: consistent identifier of processor arch, regardless of OS
+#
+# {{{
+if type -p sha256sum > /dev/null; then
+	sha256checksum() {
+		sha256sum "$@"
+	}
+elif type -p sha256 > /dev/null; then
+	sha256checksum() {
+		sha256 "$@"
+	}
+else
+	die $"No suitable SHA-256 command found!"
+fi
 
-		sha256checksum() {
-			sha256 "$@"
-		}
+case "$(uname -s)" in
+	*[fF]ree[bB][sS][dD]*)
+		: ${CARCH:="$(uname -m)"}
+		ostype="freebsd"
+		: ${CHOST:="${CARCH}-unknown-${ostype}-unknown"}
+
+		case "$CARCH" in
+			amd64) architecture="x86_64";;
+			*) architecture="$CARCH" ;;
+		esac
 
 		find_printbase() {
 			find "$@" | sed "s:^$1::" 
 		}
 		;;
-	*|*linux*)
-		ostype="$OSTYPE"
-		architecture="$(uname -m)"
-
-		sha256checksum() {
-			sha256sum "$@"
-		}
+	*[lL]inux*)
+		: ${CARCH:="$(uname -m)"}
+		ostype="linux"
+		architecture="$CARCH"
+		: ${CHOST:="${CARCH}-unknown-${ostype}-gnu"}
 
 		find_printbase() {
 			find "$@" -printf "%P\n"
 		}
 		;;
-esac #}}}
+	*) # Guess
+		: ${CARCH:="$(uname -m)"}
+		ostype="$(uname -s)"
+		architecture="$CARCH"
+		: ${CHOST:="${CARCH}-unknown-${ostype}-unknown"}
+
+		find_printbase() {
+			find "$@" | sed "s:^$1::" 
+		}
+		;;
+esac
+
+show_platform_vars() {
+	echo "CARCH=\"$CARCH\""
+	echo "CHOST=\"$CHOST\""
+	echo "ostype=\"$ostype\""
+	echo "architecture=\"$architecture\""
+	echo
+}
+
+#}}}
 
 #============================================================================
 # lock_prefix pkgix_prefix
@@ -603,7 +646,7 @@ cmd_showenv() { #{{{
 		export_env "$pkgix_prefix" || :
 	done
 
-	# See export_env for why we are not exporting LD_LIBRARY_PATH
+	(( arg_debug )) && { show_platform_vars; } || :
 
 	case "$PKGIX_SHELL" in
 		*csh)
