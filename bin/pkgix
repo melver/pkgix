@@ -465,11 +465,31 @@ prompt_continue() { #{{{
 } #}}}
 
 #============================================================================
-# export_env pkgix_prefix
+# export_env pkgix_prefix [reset]
 #
+__old_env_saved=0
 export_env() { #{{{
 	local pkgix_prefix="$(abspath "$1")"
+	local reset="${2:-0}"
+
 	[[ ! -d "$pkgix_prefix" ]] && return $RET_ERR
+
+	if (( ! __old_env_saved )); then
+		__old_env_saved=1
+		__old_PKGIX_PREFIX="${PKGIX_PREFIX:-}"
+		__old_PATH="${PATH:-}"
+		__old_LD_RUN_PATH="${LD_RUN_PATH:-}"
+		__old_LIBRARY_PATH="${LIBRARY_PATH:-}"
+		__old_PKG_CONFIG_PATH="${PKG_CONFIG_PATH:-}"
+		__old_CPATH="${CPATH:-}"
+	elif (( reset )); then
+		[[ -n "${__old_PKGIX_PREFIX}" ]] && PKGIX_PREFIX="${__old_PKGIX_PREFIX}" || unset PKGIX_PREFIX
+		[[ -n "${__old_PATH}" ]] && PATH="${__old_PATH}" || unset PATH
+		[[ -n "${__old_LD_RUN_PATH}" ]] && LD_RUN_PATH="${__old_LD_RUN_PATH}" || unset LD_RUN_PATH
+		[[ -n "${__old_LIBRARY_PATH}" ]] && LIBRARY_PATH="${__old_LIBRARY_PATH}" || unset LIBRARY_PATH
+		[[ -n "${__old_PKG_CONFIG_PATH}" ]] && PKG_CONFIG_PATH="${__old_PKG_CONFIG_PATH}" || unset PKG_CONFIG_PATH
+		[[ -n "${__old_CPATH}" ]] && CPATH="${__old_CPATH}" || unset CPATH
+	fi
 
 	if [[ -z "${PKGIX_PREFIX:-}" ]]; then
 		# Export so calls to pkgix don't need the prefix; appending, so that 
@@ -927,6 +947,8 @@ pkg_install() { #{{{
 	msg_printf "${CcynB}=> %s${Crst}\n" "$pkg_name"
 
 	(
+		export_env "$pkgix_prefix" 1
+
 		# Source package description file and try to traverse until a non-meta
 		# package description is found.
 		local next_pkg_name="$pkg_name" # preserve requested package name
@@ -999,6 +1021,11 @@ pkg_install() { #{{{
 			msg_printf "${CgrnB}%s (%s)${Crst} "$"dry install complete.\n" "$pkg_name" "${version:-}"
 			exit $EXIT_OK
 		fi
+
+		# Reset and set environment again after installing dependencies, so
+		# that the environment variables capture all folders that may have been
+		# installed by the dependencies.
+		export_env "$pkgix_prefix" 1
 
 		msg_printf "${Cgrn}%s (%s)${Crst} "$"building...\n" "$pkg_name" "${version:-}"
 
@@ -1242,8 +1269,6 @@ cmd_install() { #{{{
 	msg_printf $"Installing into %s: %s\n" "$pkgix_prefix" "$*"
 	prompt_continue || exit $EXIT_USER_ABORT
 
-	export_env "$pkgix_prefix"
-
 	local pkg_name
 	for pkg_name in "$@"; do
 		pkg_install "$pkgix_prefix" "$pkg_name" "$arg_reinstall"
@@ -1268,8 +1293,6 @@ prefix_upgrade() { #{{{
 
 	msg_printf $"Upgrading %s ...\n" "$pkgix_prefix"
 	prompt_continue || return $RET_USER_ABORT
-
-	export_env "$pkgix_prefix"
 
 	db_list_installed "$pkgix_prefix" |
 	while read pkg_name; do
