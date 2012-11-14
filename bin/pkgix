@@ -736,16 +736,18 @@ source_pkg_file() { #{{{
 } #}}}
 
 #============================================================================
-# source_pkg pkg_name
+# source_pkg pkg_name [prefer_repo]
 #
 source_pkg() { #{{{
 	local pkg_name="$1"
+	local prefer_repo="${2:-}"
 	local pkg_file
 
 	# Don't set repo as local here, as it can then be used in the package
 	# description files to get information about its source repository, and 
 	# e.g., download extra files such as patches from the repository.
-	for repo in "${PKGIX_REPOS[@]:+${PKGIX_REPOS[@]}}"; do
+	for repo in "$prefer_repo" "${PKGIX_REPOS[@]:+${PKGIX_REPOS[@]}}"; do
+		[[ -z "$repo" ]] && continue || :
 		pkg_file="${repo}/$pkg_name"
 
 		case "$pkg_file" in
