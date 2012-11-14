@@ -1234,7 +1234,7 @@ cmd_install() { #{{{
 		fi
 
 		# dir exists now, normalize path just in case it contained `..`s
-		pkgix_prefix="$(abspath "$1")"
+		pkgix_prefix="$(abspath "$pkgix_prefix")"
 	fi
 
 	lock_prefix "$pkgix_prefix" || exit $EXIT_ERR
