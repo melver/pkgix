@@ -285,14 +285,26 @@ in_list() { #{{{
 # {{{
 if type -p sha256sum > /dev/null; then
 	sha256checksum() {
-		sha256sum "$@"
+		sha256sum "$1"
 	}
 elif type -p sha256 > /dev/null; then
 	sha256checksum() {
-		sha256 "$@"
+		sha256 < "$1"
 	}
 else
 	die $"No suitable SHA-256 command found!"
+fi
+
+if type -p md5sum > /dev/null; then
+	md5checksum() {
+		md5sum "$1"
+	}
+elif type -p md5 > /dev/null; then
+	md5checksum() {
+		md5 < "$1"
+	}
+else
+	warning_printf $"No suitable MD5 command found; MD5 checksums not supported."
 fi
 
 case "$(uname -s)" in
@@ -417,12 +429,57 @@ fetch_remote() { #{{{
 } #}}}
 
 #============================================================================
-# fetch url checksum_sha256 [file_name]
+# verify_checksum checksum file_name
+#
+# checksum can be prefixed by <checksum-type>= to denote the checksum type.
+# Supported types are: sha256 (default), md5
+#
+verify_checksum() { #{{{
+	local checksum="$1"
+	local file_name="$2"
+	local file_checksum
+	local checksum_fn
+
+	case "$checksum" in
+		md5=*)
+			checksum="${checksum##md5=}"
+			checksum_fn="md5checksum"
+			;;
+		*) # Default is sha256
+			checksum="${checksum##sha256=}"
+			checksum_fn="sha256checksum"
+			;;
+	esac
+
+	file_checksum=($($checksum_fn "$file_name"))
+	file_checksum="${file_checksum[0]}"
+
+	if [[ -n "$checksum" ]]; then
+		if (( ! arg_ignore_checksums )); then
+			if [[ "$file_checksum" != "$checksum" ]]; then
+				die $"Checksum of '%s' [%s] does not match [%s]!\n" "$file_name" "$file_checksum" "$checksum"
+			else
+				msg_printf $"Valid checksum: %s\n" "$file_name"
+			fi
+		else
+			warning_printf $"Ignoring checksum for '%s'...\n" "$file_name"
+		fi
+	else
+		if (( ! arg_ignore_checksums )); then
+			die $"No checksum for '%s' [%s]!\n" "$file_name" "$file_checksum"
+		else
+			warning_printf $"No checksum for '%s' [%s]!\n" "$file_name" "$file_checksum"
+		fi
+	fi
+} #}}}
+
+#============================================================================
+# fetch url [checksum] [file_name]
 # Function for use in package description files.
 #
 fetch() { #{{{
 	local url="${1:-}"
-	local checksum_sha256="${2:-}"
+	local checksum="${2:-}"
 	local file_name="${3:-${url##*/}}"
 
 	[[ -z "$url" ]] && die $"Invalid URL\n" || :
@@ -442,27 +499,7 @@ fetch() { #{{{
 		fi
 	fi
 
-	local file_checksum_sha256
-	file_checksum_sha256=($(sha256checksum "$file_name"))
-	file_checksum_sha256="${file_checksum_sha256[0]}"
-
-	if [[ -n "$checksum_sha256" ]]; then
-		if (( ! arg_ignore_checksums )); then
-			if [[ "$file_checksum_sha256" != "$checksum_sha256" ]]; then
-				die $"Checksum of '%s' (%s)\n    does not match (%s)!\n" "$file_name" "$file_checksum_sha256" "$checksum_sha256"
-			else
-				msg_printf $"Valid checksum: %s\n" "$file_name"
-			fi
-		else
-			warning_printf $"Ignoring checksum for '%s'...\n" "$file_name"
-		fi
-	else
-		if (( ! arg_ignore_checksums )); then
-			die $"No checksum for '%s' (%s)!\n" "$file_name" "$file_checksum_sha256"
-		else
-			warning_printf $"No checksum for '%s' (%s)!\n" "$file_name" "$file_checksum_sha256"
-		fi
-	fi
+	verify_checksum "$checksum" "$file_name"
 } #}}}
 
 #============================================================================
@@ -471,10 +508,10 @@ fetch() { #{{{
 #
 fetch_extract() { #{{{
 	local url="${1:-}"
-	local checksum_sha256="${2:-}"
+	local checksum="${2:-}"
 	local archive_name="${3:-${url##*/}}"
 
-	fetch "$url" "$checksum_sha256" "$archive_name"
+	fetch "$url" "$checksum" "$archive_name"
 	extract_archive "$archive_name"
 } #}}}
 
