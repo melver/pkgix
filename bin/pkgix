@@ -219,12 +219,26 @@ warning_printf() { #{{{
 } #}}}
 
 #============================================================================
+# die [printf_args..]
+# Print message with error_printf then exit; if no message is specified, show a
+# default error message.
+#
+die() { #{{{
+	if (( $# > 0 )); then
+		error_printf "$@"
+	else
+		error_printf $"An error occurred @ %s\n" "$(caller 0)"
+	fi
+
+	exit $EXIT_ERR
+} #}}}
+
+#============================================================================
 # Sanitize environment variables (done here, as *_printf may be needed)
 #
 if [[ -n "${PKGIX_BUILD_DIR:-}" ]]; then
 	if [[ ! -d "$PKGIX_BUILD_DIR" ]]; then
-		error_printf $"PKGIX_BUILD_DIR='%s' is not a valid directory!\n" "$PKGIX_BUILD_DIR"
-		exit $EXIT_ERR
+		die $"PKGIX_BUILD_DIR='%s' is not a valid directory!\n" "$PKGIX_BUILD_DIR"
 	fi
 
 	PKGIX_BUILD_DIR="$(abspath "$PKGIX_BUILD_DIR")"
@@ -256,8 +270,7 @@ in_list() { #{{{
 } #}}}
 
 #============================================================================
-# OS dependent functions
-# Also set ostype and architecture (aliases to OS and arch name)
+# OS dependent functions, detect platform and set variables accordingly
 #
 case "$OSTYPE" in #{{{
 	*freebsd*|*FreeBSD*)
@@ -340,11 +353,10 @@ extract_archive() { #{{{
 			*.zip)      unzip "$archive_name"      ;;
 			*.Z)        uncompress "$archive_name" ;;
 			*.7z)       7z x "$archive_name"       ;;
-			*)          error_printf $"'%s' cannot be extracted (unknown format)!\n" "$archive_name" ; exit $EXIT_ERR ;;
+			*)          die $"'%s' cannot be extracted (unknown format)!\n" "$archive_name" ;;
 		esac
 	else
-		error_printf $"'%s' is not a valid file !\n" "$archive_name"
-		exit $EXIT_ERR
+		die $"'%s' is not a valid file !\n" "$archive_name"
 	fi
 } #}}}
 
@@ -370,24 +382,19 @@ fetch() { #{{{
 	local checksum_sha256="${2:-}"
 	local file_name="${3:-${url##*/}}"
 
-	if [[ -z "$url" ]]; then
-		error_printf $"Invalid URL\n"
-		exit $EXIT_ERR
-	fi
+	[[ -z "$url" ]] && die $"Invalid URL\n" || :
 
 	if [[ ! -f "$file_name" ]]; then
 		if [[ "$url" =~ ^/ ]]; then
 			# Is a local path, just copy
 			msg_printf $"Copying '%s'...\n" "$url"
 			if ! cp "$url" "$file_name" &> /dev/null; then
-				error_printf $"Copying '%s' failed!\n" "$url"
-				exit $EXIT_ERR
+				die $"Copying '%s' failed!\n" "$url"
 			fi
 		else
 			msg_printf $"Fetching '%s'...\n" "$url"
 			if ! fetch_remote "$url" "$file_name"; then
-				error_printf $"Fetching '%s' failed!\n" "$url"
-				exit $EXIT_ERR
+				die $"Fetching '%s' failed!\n" "$url"
 			fi
 		fi
 	fi
@@ -399,8 +406,7 @@ fetch() { #{{{
 	if [[ -n "$checksum_sha256" ]]; then
 		if (( ! arg_ignore_checksums )); then
 			if [[ "$file_checksum_sha256" != "$checksum_sha256" ]]; then
-				error_printf $"Checksum of '%s' (%s)\n    does not match (%s)!\n" "$file_name" "$file_checksum_sha256" "$checksum_sha256"
-				exit $EXIT_ERR
+				die $"Checksum of '%s' (%s)\n    does not match (%s)!\n" "$file_name" "$file_checksum_sha256" "$checksum_sha256"
 			else
 				msg_printf $"Valid checksum: %s\n" "$file_name"
 			fi
@@ -409,8 +415,7 @@ fetch() { #{{{
 		fi
 	else
 		if (( ! arg_ignore_checksums )); then
-			error_printf $"No checksum for '%s' (%s)!\n" "$file_name" "$file_checksum_sha256"
-			exit $EXIT_ERR
+			die $"No checksum for '%s' (%s)!\n" "$file_name" "$file_checksum_sha256"
 		else
 			warning_printf $"No checksum for '%s' (%s)!\n" "$file_name" "$file_checksum_sha256"
 		fi
@@ -706,6 +711,11 @@ source_pkg() { #{{{
 #     old_version - if package is being upgraded (see prefix_upgrade)
 #     repo - the URL where the package description file is located
 #
+# Useful functions for use in package description files:
+#     fetch, fetch_extract, die
+#
+# See platform detection above for variables identifying the host platform.
+#
 # Due to the way BASH behaves, propagating even local variables from a parent
 # function to its children, ALL variables from parents will be available.
 # However, as the function to be called is executed in a subshell, none of
@@ -715,8 +725,7 @@ sourced_pkg_call() { #{{{
 	local funcname=$1
 
 	if ! type -p $funcname > /dev/null; then
-		error_printf $"Package file does not provide function: %s\n" "$funcname"
-		exit $EXIT_ERR
+		die $"Package file does not provide function: %s\n" "$funcname"
 	fi
 
 	(
@@ -935,8 +944,7 @@ pkg_install() { #{{{
 	local is_reinstall=0
 
 	if [[ ! -d "$pkgix_prefix" ]]; then
-		error_printf $"'%s' is not a valid directory!\n" "$pkgix_prefix"
-		exit $EXIT_ERR
+		die $"'%s' is not a valid directory!\n" "$pkgix_prefix"
 	fi
 
 	if pkg_db_isinstalled "$pkgix_prefix" "$pkg_name"; then
@@ -979,8 +987,7 @@ pkg_install() { #{{{
 			unset_sourced_pkg
 
 			if ! source_pkg "$next_pkg_name"; then
-				error_printf $"Could not find valid package description file for '%s'!\n" "$next_pkg_name"
-				exit $EXIT_ERR
+				die $"Could not find valid package description file for '%s'!\n" "$next_pkg_name"
 			fi
 
 			# Not a meta-package, continue normally
@@ -999,8 +1006,7 @@ pkg_install() { #{{{
 			# If this metapackage is only a dummy to check if a dependence is satisfied,
 			# and the above 'satisfied' function failed, this is a dead end.
 			if [[ "$metapkg" == "$METAPKG_DUMMY" ]]; then
-				error_printf $"Metapackage '%s' could not be satisfied!\n" "$next_pkg_name"
-				exit $EXIT_ERR
+				die $"Metapackage '%s' could not be satisfied!\n" "$next_pkg_name"
 			fi
 
 			# Not satisfied and not a dummy, resolve this by trying to install
@@ -1020,8 +1026,7 @@ pkg_install() { #{{{
 
 		if ! sourced_pkg_call iscompat; then
 			if (( ! arg_force )); then
-				error_printf $"'%s' is not compatible with your system!\n" "$pkg_name"
-				exit $EXIT_ERR
+				die $"'%s' is not compatible with your system!\n" "$pkg_name"
 			else
 				warning_printf $"Trying installation of '%s', despite system incompatibility...\n" "$pkg_name"
 			fi
@@ -1073,15 +1078,13 @@ pkg_install() { #{{{
 		trap "$trap_cmd" EXIT
 
 		if ! sourced_pkg_call build "$pkgix_prefix" "$install_dir"; then
-			error_printf $"Building '%s' failed! Aborting.\n" "$pkg_name"
-			exit $EXIT_ERR
+			die $"Building '%s' failed! Aborting.\n" "$pkg_name"
 		fi
 
 		msg_printf "${Cgrn}%s (%s)${Crst} "$"installing into staging area...\n" "$pkg_name" "${version:-}"
 
 		if ! sourced_pkg_call installenv "$pkgix_prefix" "$install_dir"; then
-			error_printf $"Installation of '%s' failed! Aborting.\n" "$pkg_name"
-			exit $EXIT_ERR
+			die $"Installation of '%s' failed! Aborting.\n" "$pkg_name"
 		fi
 
 		if (( is_reinstall )); then
@@ -1139,8 +1142,7 @@ pkg_install() { #{{{
 						continue
 					fi
 
-					error_printf $"Conflict detected: %s\n" "$path"
-					exit $EXIT_ERR
+					die $"Conflict detected: %s\n" "$path"
 				fi
 			done < "$staging_files_file"
 		else
@@ -1186,8 +1188,7 @@ pkg_remove() { #{{{
 	local purge="${3:-0}"
 
 	if ! pkg_db_isinstalled "$pkgix_prefix" "$pkg_name"; then
-		error_printf $"'%s' not found!\n" "$pkg_name"
-		exit $EXIT_ERR
+		die $"'%s' not found!\n" "$pkg_name"
 	fi
 
 	set_db_vars "$pkgix_prefix" "$pkg_name"
@@ -1270,14 +1271,12 @@ cmd_install() { #{{{
 	shift
 
 	if [[ -z "${1:-}" ]]; then
-		error_printf $"You need to specify at least one package to install.\n"
-		exit $EXIT_ERR
+		die $"You need to specify at least one package to install.\n"
 	fi
 
 	if [[ ! -d "${pkgix_prefix}" ]]; then
 		if ! mkdir -p "${pkgix_prefix}" 2> /dev/null; then
-			error_printf $"Could not create directory '%s'!\n" "$pkgix_prefix"
-			exit $EXIT_ERR
+			die $"Could not create directory '%s'!\n" "$pkgix_prefix"
 		fi
 
 		# dir exists now, normalize path just in case it contained `..`s
@@ -1379,11 +1378,10 @@ cmd_upgrade() { #{{{
 #
 cmd_remove() { #{{{
 	local pkgix_prefix="$(abspath "$1")"
-	shift || { error_printf $"No targets specified!\n"; exit $EXIT_ERR; }
+	shift || die $"No targets specified!\n"
 
 	if [[ ! -d "$pkgix_prefix" ]]; then
-		error_printf $"'%s' is not a valid directory!\n" "$pkgix_prefix"
-		exit $EXIT_ERR
+		die $"'%s' is not a valid directory!\n" "$pkgix_prefix"
 	fi
 
 	lock_prefix "$pkgix_prefix" || exit $EXIT_ERR
@@ -1544,7 +1542,7 @@ cmd_show() { #{{{
 		pkgix_prefixes+=("${1:-}")
 	fi
 
-	shift || { error_printf $"No targets specified!\n"; exit $EXIT_ERR; }
+	shift || die $"No targets specified!\n"
 
 	local pkg_name
 	local pkgix_prefix
@@ -1552,8 +1550,7 @@ cmd_show() { #{{{
 		for pkgix_prefix in "${pkgix_prefixes[@]}"; do
 			pkgix_prefix="$(abspath "$pkgix_prefix")"
 			if [[ ! -d "$pkgix_prefix" ]]; then
-				error_printf $"'%s' is not a valid directory!\n" "$pkgix_prefix"
-				exit $EXIT_ERR
+				die $"'%s' is not a valid directory!\n" "$pkgix_prefix"
 			fi
 
 			set_db_vars "$pkgix_prefix" "$pkg_name"
@@ -1589,8 +1586,7 @@ cmd_show() { #{{{
 		done
 
 		if [[ -z "$db_prefix" ]]; then
-			error_printf $"'%s' not found!\n" "$pkg_name"
-			exit $EXIT_ERR
+			die $"'%s' not found!\n" "$pkg_name"
 		fi
 
 		unset_db_vars
@@ -1898,8 +1894,7 @@ run_cmd() { #{{{
 		install|remove)
 			if [[ -z "${PKGIX_PREFIX:-}" ]]; then
 				if [[ -z "${1:-}" ]]; then
-					error_printf $"You need to specify a prefix!\n"
-					exit $EXIT_ERR
+					die $"You need to specify a prefix!\n"
 				fi
 
 				cmd_$cmd "$@"
@@ -1917,8 +1912,7 @@ run_cmd() { #{{{
 					showenv|chenv) ;;
 					*)
 						if [[ -z "${1:-}" ]]; then
-							error_printf $"You need to specify at least one prefix!\n"
-							exit $EXIT_ERR
+							die $"You need to specify at least one prefix!\n"
 						fi
 						;;
 				esac
@@ -1939,8 +1933,7 @@ run_cmd() { #{{{
 			cmd_$cmd "$@"
 			;;
 		*)
-			error_printf $"Unknown command: %s\n" "$cmd"
-			exit $EXIT_ERR
+			die $"Unknown command: %s\n" "$cmd"
 			;;
 	esac
 } #}}}
