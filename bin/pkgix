@@ -270,6 +270,26 @@ in_list() { #{{{
 } #}}}
 
 #============================================================================
+# IFS_expand to_var from_var [set_IFS]
+# Generates code to expands an IFS separated string into an array.
+# Use eval "$(IFS_expand ..)"; without eval, it would not be possible to set
+# scoped variables, such as function-local ones. Setting a global variable
+# to hold the result is fragile, especially with arrays.
+#
+IFS_expand() { #{{{
+	local to_var="$1"
+	local from_var="$2"
+	local set_IFS="${3:-$IFS}"
+
+	printf -- '__o_IFS="$IFS" ;
+IFS="%s" ;
+%s=(${%s[@]}) ;
+IFS="$__o_IFS" ;
+unset __o_IFS ;
+' "$set_IFS" "$to_var" "$from_var"
+} #}}}
+
+#============================================================================
 # OS dependent functions, detect platform and set variables accordingly
 #
 ## pkgix tries to find defaults, but can be set from environment:
@@ -1316,9 +1336,8 @@ pkg_remove() { #{{{
 			# deleted before its subdirectories, which could be empty, but
 			# because the subdirectories still exist, the parent won't be
 			# deleted.
-			local o_IFS="$IFS"         ; IFS="/"
-			local tmp=(${filename[@]}) ; IFS="$o_IFS"
-			printf "${#tmp[@]}:${filename}\n"
+			eval "$(IFS_expand tmp filename "/")"
+			echo "${#tmp[@]}:${filename}"
 		fi
 	done | sort -rn |
 	while read filename; do
@@ -1693,13 +1712,12 @@ cmd_chenv() { #{{{
 # Turn PKGIX_REPOS into an array and sanitize some URLs
 #
 sanitize_repos() { #{{{
+	local old_repos
 	# Check if it is already an array (user set in RC-file)
 	if [[ "$(declare -p PKGIX_REPOS)" =~ ^"declare -a" ]]; then
-		local old_repos=("${PKGIX_REPOS[@]:+${PKGIX_REPOS[@]}}")
+		old_repos=("${PKGIX_REPOS[@]:+${PKGIX_REPOS[@]}}")
 	else
-		local o_IFS="$IFS" ; IFS="$URL_SEP"
-		local old_repos=(${PKGIX_REPOS[@]})
-		IFS="$o_IFS" ; unset o_IFS
+		eval "$(IFS_expand old_repos PKGIX_REPOS "$URL_SEP")"
 	fi
 
 	PKGIX_REPOS=()
@@ -1957,9 +1975,8 @@ run_cmd() { #{{{
 
 				cmd_$cmd "$@"
 			else
-				local o_IFS="$IFS" ; IFS=":"
-				local args_prefix=(${PKGIX_PREFIX[@]})
-				IFS="$o_IFS" ; unset o_IFS
+				local args_prefix
+				eval "$(IFS_expand args_prefix PKGIX_PREFIX ":")"
 
 				case "$cmd" in
 					show|upgrade) cmd_$cmd "${args_prefix[@]}" -- "$@" ;;
