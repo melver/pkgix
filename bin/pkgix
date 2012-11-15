@@ -1436,7 +1436,7 @@ prefix_upgrade() { #{{{
 				else
 					msg_printf "${Ccyn}"$"Upgrading""${Crst} %s (%s -> %s)" "$pkg_name" "$old_version" "${version:-}"
 					(( ! arg_reinstall )) && printf "\n" || printf " - "$"reinstall\n"
-					log_printf "$pkgix_prefix" $"upgrading"" %s (%s -> %s)\n" "$pkg_name" "$old_version" "${version:-}"
+					(( ! arg_dry_run )) && log_printf "$pkgix_prefix" $"upgrading"" %s (%s -> %s)\n" "$pkg_name" "$old_version" "${version:-}" || :
 
 					pkg_install "$pkgix_prefix" "$pkg_name" 1
 				fi
