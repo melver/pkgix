@@ -303,13 +303,22 @@ unset __o_IFS ;
 # architecture: consistent identifier of processor arch, regardless of OS
 #
 # {{{
+
+#----------------------------------------------------------------------------
+# *checksum [file_name]
+# If file_name is "-" or not provided, read from stdin.
+#
 if type -p sha256sum > /dev/null; then
 	sha256checksum() {
-		sha256sum "$1"
+		sha256sum "${1:--}"
 	}
 elif type -p sha256 > /dev/null; then
 	sha256checksum() {
-		sha256 < "$1"
+		if [[ "${1:--}" == "-" ]]; then
+			sha256
+		else
+			sha256 < "$1"
+		fi
 	}
 else
 	die $"No suitable SHA-256 command found!"
@@ -317,11 +326,15 @@ fi
 
 if type -p md5sum > /dev/null; then
 	md5checksum() {
-		md5sum "$1"
+		md5sum "${1:--}"
 	}
 elif type -p md5 > /dev/null; then
 	md5checksum() {
-		md5 < "$1"
+		if [[ "${1:--}" == "-" ]]; then
+			md5
+		else
+			md5 < "$1"
+		fi
 	}
 else
 	warning_printf $"No suitable MD5 command found; MD5 checksums not supported."
@@ -760,6 +773,13 @@ source_pkg_file() { #{{{
 #============================================================================
 # source_pkg pkg_name [prefer_repo]
 #
+# As source_pkg will be called in subshells, need to initialize repo_cache_dir
+# here; only created if needed.
+if type -p mktemp > /dev/null; then
+	__repo_cache_dir="$(mktemp -du)-${PROGNAME}"
+else
+	__repo_cache_dir="/tmp/.${PROGNAME}-repo-cache"
+fi
 source_pkg() { #{{{
 	local pkg_name="$1"
 	local prefer_repo="${2:-}"
@@ -774,16 +794,26 @@ source_pkg() { #{{{
 
 		case "$pkg_file" in
 			http://*|https://*|ftp://*)
-				local tmpfile="$(mktemp)"
+				local repo_hash=($(sha256checksum <<< "$repo"))
+				local local_pkg_file="${__repo_cache_dir}/${repo_hash[0]}/${pkg_name}"
+				[[ ! -d "${local_pkg_file%/*}" ]] && mkdir -p "${local_pkg_file%/*}" || :
 
 				verbose_printf $"Trying: %s\n" "$pkg_file"
-				if fetch_remote "$pkg_file" "$tmpfile" 2> /dev/null; then
-					verbose_printf $"Source:"" ${Cgrn}%s${Crst}\n" "$pkg_file"
-					source_pkg_file "$pkg_name" "$tmpfile"
-					rm "$tmpfile"
+
+				if [[ -f "$local_pkg_file" ]]; then
+					verbose_printf $"Source:"" ${Cgrn}%s${Crst} (%s)\n" "$pkg_file" $"cached"
+				else
+					if fetch_remote "$pkg_file" "$local_pkg_file" 2> /dev/null; then
+						verbose_printf $"Source:"" ${Cgrn}%s${Crst}\n" "$pkg_file"
+					else
+						rm -f "$local_pkg_file"
+					fi
+				fi
+
+				if [[ -f "$local_pkg_file" ]]; then
+					source_pkg_file "$pkg_name" "$local_pkg_file"
 					break
 				fi
-				rm "$tmpfile"
 				;;
 			*)
 				verbose_printf $"Trying: %s\n" "$pkg_file"
@@ -1896,6 +1926,8 @@ prog_version() { #{{{
 #
 exit_cleanup() { #{{{
 	[[ -n "$__lock_held" ]] && unlock_prefix "$__lock_held" || :
+	[[ -n "$__repo_cache_dir" && -d "$__repo_cache_dir" ]] && rm -rf "$__repo_cache_dir" || :
+
 	trap - EXIT
 } #}}}
 
