@@ -378,8 +378,9 @@ show_platform_vars() {
 # lock_prefix pkgix_prefix
 # Checks for existing lock, creates a lock file in pkgix_prefix if not locked.
 #
-# Should not call from subshells!
+# !! Should not call from subshells !!
 #
+__lock_held=""
 lock_prefix() { #{{{
 	local pkgix_prefix="$(abspath "$1")"
 	local lock_file="${pkgix_prefix}/${LOCK_FILE}"
@@ -390,18 +391,19 @@ lock_prefix() { #{{{
 
 	[[ ! -d "${lock_file%/*}" ]] && mkdir -p "${lock_file%/*}" || :
 	: > "$lock_file"
-	trap "unlock_prefix '${pkgix_prefix}'" EXIT
+	__lock_held="${pkgix_prefix}"
 	return $RET_OK
 } #}}}
 
 #============================================================================
 # unlock_prefix pkgix_prefix
+# !! Should not call from subshells !!
 #
 unlock_prefix() { #{{{
 	local pkgix_prefix="$(abspath "$1")"
 	local lock_file="${pkgix_prefix}/${LOCK_FILE}"
-	rm "$lock_file"
-	trap - EXIT
+	rm -f "$lock_file"
+	__lock_held=""
 } #}}}
 
 #============================================================================
@@ -578,13 +580,13 @@ prompt_continue() { #{{{
 # valid in this session, but can be used to provide extra variables to
 # package description files.
 #
-prefix_rc_sourced=0
+__prefix_rc_sourced=0
 source_prefix_rc() { #{{{
-	(( prefix_rc_sourced )) && return || :
+	(( __prefix_rc_sourced )) && return || :
 	local pkgix_prefix="$1"
 	[[ ! -r "${pkgix_prefix}/etc/${PROGNAME}rc" ]] && return || :
 	source "${pkgix_prefix}/etc/${PROGNAME}rc"
-	prefix_rc_sourced=1
+	__prefix_rc_sourced=1
 } #}}}
 
 #============================================================================
@@ -1409,10 +1411,10 @@ prefix_upgrade() { #{{{
 		return $RET_INVALID_OPTION
 	fi
 
-	lock_prefix "$pkgix_prefix" || exit $EXIT_ERR
-
 	msg_printf $"Upgrading %s ...\n" "$pkgix_prefix"
 	prompt_continue || return $RET_USER_ABORT
+
+	lock_prefix "$pkgix_prefix" || exit $EXIT_ERR
 
 	db_list_installed "$pkgix_prefix" |
 	while read pkg_name; do
@@ -1444,11 +1446,14 @@ prefix_upgrade() { #{{{
 				msg_printf "%s (%s) "$"is up to date\n" "$pkg_name" "$old_version"
 			fi
 		) || exit $?  # Break out of pipe-subshell
-	done || return $? # Take return code if pipe-subshell exited with errors
+	done || {	unlock_prefix "$pkgix_prefix" ;
+				return $? ; } # Take return code if pipe-subshell exited with errors
 
 	msg_printf $"Done upgrading.\n"
 
 	unlock_prefix "$pkgix_prefix"
+
+	return $RET_OK
 } #}}}
 
 #============================================================================
@@ -1465,9 +1470,7 @@ cmd_upgrade() { #{{{
 	local pkgix_prefix
 	local ret_code
 	for pkgix_prefix in "${pkgix_prefixes[@]}"; do
-		# Run nested, not to pollute subsequent upgrades with export_env
-		# The environment should be set accordingly prior to upgrading!
-		( prefix_upgrade "$pkgix_prefix" "$@" ) && ret_code=$? || ret_code=$?
+		prefix_upgrade "$pkgix_prefix" "$@" && ret_code=$? || ret_code=$?
 		if (( ret_code != RET_OK && ret_code != RET_INVALID_OPTION && ret_code != RET_USER_ABORT )); then
 			exit $EXIT_ERR
 		fi
@@ -1889,6 +1892,14 @@ prog_version() { #{{{
 } #}}}
 
 #============================================================================
+# exit_cleanup
+#
+exit_cleanup() { #{{{
+	[[ -n "$__lock_held" ]] && unlock_prefix "$__lock_held" || :
+	trap - EXIT
+} #}}}
+
+#============================================================================
 # trap_ERR errcode lineno command [traceback...]
 #
 trap_ERR() { #{{{
@@ -1905,12 +1916,13 @@ trap_ERR() { #{{{
 
 #============================================================================
 # reset_traps
-# Initializes traps
+# Resets or initializes traps
 #
 reset_traps() { #{{{
 	trap '{ msg_printf $"TERM signal caught, exiting...\n"; exit 42; }' TERM HUP QUIT
 	trap '{ msg_printf $"User aborted.\n"; exit 42; }' INT
 	trap 'trap_ERR "$?" "$LINENO" "$BASH_COMMAND" "${FUNCNAME[@]:+${FUNCNAME[@]}}"' ERR
+	trap 'exit_cleanup' EXIT
 } #}}}
 
 #============================================================================
