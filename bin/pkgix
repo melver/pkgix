@@ -859,7 +859,24 @@ sourced_pkg_call() { #{{{
 	local funcname=$1
 
 	if ! type -p $funcname > /dev/null; then
-		die $"Package file does not provide function: %s\n" "$funcname"
+		local error_msg
+		printf -v error_msg $"Package file does not provide function: %s\n" "$funcname"
+
+		case "$funcname" in
+			isinstalled)
+				# Default to installing if isinstalled not provided
+				warning_printf "$error_msg"
+				return $RET_ERR
+				;;
+			iscompat)
+				# Default to installing if iscompat not provided
+				warning_printf "$error_msg"
+				return $RET_OK
+				;;
+			*)
+				die "$error_msg"
+				;;
+		esac
 	fi
 
 	(
