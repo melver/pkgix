@@ -290,6 +290,16 @@ unset __o_IFS ;
 } #}}}
 
 #============================================================================
+# resolv_dir_symlink
+# Resolves directory symlinks only; we can use the bash builtin pwd with the
+# -P option for this, instead of using external tools such as readlink or
+# realpath.
+#
+resolv_dir_symlink() { #{{{
+	( cd "$1" && pwd -P )
+} #}}}
+
+#============================================================================
 # OS dependent functions, detect platform and set variables accordingly
 #
 ## pkgix tries to find defaults, but can be set from environment:
@@ -321,7 +331,7 @@ elif type -p sha256 > /dev/null; then
 		fi
 	}
 else
-	die $"No suitable SHA-256 command found!"
+	die $"No suitable SHA-256 command found!\n"
 fi
 
 if type -p md5sum > /dev/null; then
@@ -561,6 +571,22 @@ remove_empty_dirs() { #{{{
 	[[ -z "$depth" ]] && find_args=() || find_args=("-maxdepth" "$depth")
 
 	find "$path" "${find_args[@]:+${find_args[@]}}" -type d -empty -delete
+} #}}}
+
+#============================================================================
+# remove_invalid_symlinks path [depth]
+# Remove invalid symlinks in path.
+#
+remove_invalid_symlinks() { #{{{
+	local path="$1"
+	local depth="${2:-}"
+	local find_args
+	[[ -z "$depth" ]] && find_args=() || find_args=("-maxdepth" "$depth")
+
+	find "$path" "${find_args[@]:+${find_args[@]}}" -type l |
+	while read lpath; do
+		[[ ! -e "$lpath" ]] && rm -v "$lpath" || :
+	done
 } #}}}
 
 #============================================================================
@@ -903,6 +929,7 @@ unset_sourced_pkg() { #{{{
 	unset website
 	unset description
 	unset depends
+	unset provides
 	unset iscompat
 	unset isinstalled
 	unset build
@@ -918,9 +945,9 @@ unset_sourced_pkg() { #{{{
 pkg_db_isinstalled() { #{{{
 	local pkgix_prefix="$1"
 	local pkg_name="$2"
-	local db_prefix="${pkgix_prefix}/${DB_PREFIX}/${pkg_name}"
+	local db_prefix_pkg="${pkgix_prefix}/${DB_PREFIX}/${pkg_name}"
 
-	[[ -f "${db_prefix}/version" && -f "${db_prefix}/files" ]]
+	[[ -f "${db_prefix_pkg}/version" && -f "${db_prefix_pkg}/files" ]]
 } #}}}
 
 #============================================================================
@@ -929,11 +956,12 @@ pkg_db_isinstalled() { #{{{
 set_db_vars() { #{{{
 	local pkgix_prefix="$1"
 	local pkg_name="$2"
-	db_prefix="${pkgix_prefix}/${DB_PREFIX}/${pkg_name}"
-	db_files_file="${db_prefix}/files"
-	db_backup_file="${db_prefix}/files.backup"
-	db_version_file="${db_prefix}/version"
-	db_info_file="${db_prefix}/info"
+	db_prefix="${pkgix_prefix}/${DB_PREFIX}"
+	db_prefix_pkg="${db_prefix}/${pkg_name}"
+	db_files_file="${db_prefix_pkg}/files"
+	db_backup_file="${db_prefix_pkg}/files.backup"
+	db_version_file="${db_prefix_pkg}/version"
+	db_info_file="${db_prefix_pkg}/info"
 } #}}}
 
 #============================================================================
@@ -941,6 +969,7 @@ set_db_vars() { #{{{
 #
 unset_db_vars() { #{{{
 	unset db_prefix
+	unset db_prefix_pkg
 	unset db_files_file
 	unset db_backup_file
 	unset db_version_file
@@ -961,7 +990,21 @@ pkg_db_install() { #{{{
 	set_db_vars "$pkgix_prefix" "$pkg_name"
 
 	# Create installed database folders
-	mkdir -p "${db_prefix}"
+	mkdir -p "${db_prefix_pkg}"
+
+	# Set up provides symlinks
+	local provides_name
+	local db_provides_target
+	for provides_name in "${provides[@]:+${provides[@]}}"; do
+		[[ "$provides_name" == "$pkg_name" ]] && continue
+		local db_provides_target="${db_prefix}/${provides_name}"
+		if [[ -e "$db_provides_target" ]]; then
+			warning_printf $"'%s' provides '%s', which already exists!\n" "$pkg_name" "$provides_name"
+		else
+			mkdir -p "${db_provides_target%/*}"
+			ln -s "${db_prefix_pkg}" "${db_provides_target}"
+		fi
+	done
 
 	# Use previously created list of files and pkgnew files
 	cat "$staging_files_file" "$pkgnew_files_file" > "$db_files_file"
@@ -992,6 +1035,13 @@ pkg_db_install() { #{{{
 		done
 		printf " )\n"
 
+		printf "provides=("
+		local provides_name
+		for provides_name in "${provides[@]:+${provides[@]}}"; do
+			printf " '%s'" "$provides_name"
+		done
+		printf " )\n"
+
 		echo "reason=\"${reason}\""
 	} > "$db_info_file"
 
@@ -1003,7 +1053,7 @@ pkg_db_install() { #{{{
 	# As the entries are not deleted upon removal, over time, a dependence ordering
 	# is being built, so that if removed packages are reinstalled, upgrading still
 	# works as before.
-	local db_file="${pkgix_prefix}/${DB_PREFIX}.db"
+	local db_file="${db_prefix}.db"
 
 	if [[ -f "$db_file" ]] && grep -q "^.|${pkg_name}$" "$db_file"; then
 		sed -i "s:^.|${pkg_name}$:i|${pkg_name}:" "$db_file"
@@ -1022,6 +1072,7 @@ unset_db_info() { #{{{
 	unset website
 	unset license
 	unset depends
+	unset provides
 	unset installdate
 	unset reason
 } #}}}
@@ -1338,11 +1389,22 @@ pkg_remove() { #{{{
 	local pkg_name="$2"
 	local purge="${3:-0}"
 
+	set_db_vars "$pkgix_prefix" "$pkg_name"
+
+	# Check if valid symlink to db dir (provides target)
+	if [[ -L "$db_prefix_pkg" && -d "$db_prefix_pkg" ]]; then
+		# Resolve both path to pkg-dir and db-prefix, in case there are other
+		# symlink along the way.
+		db_prefix_pkg="$(resolv_dir_symlink "$db_prefix_pkg")"
+		db_prefix="$(resolv_dir_symlink "$db_prefix")"
+		pkg_name="${db_prefix_pkg##${db_prefix}/}"
+		set_db_vars "$pkgix_prefix" "$pkg_name"
+	fi
+
 	if ! pkg_db_isinstalled "$pkgix_prefix" "$pkg_name"; then
 		die $"'%s' not found!\n" "$pkg_name"
 	fi
 
-	set_db_vars "$pkgix_prefix" "$pkg_name"
 	local version="$(<"$db_version_file")"
 
 	# Create an empty files.backup file if it does not exist [backwards compatibility].
@@ -1396,16 +1458,14 @@ pkg_remove() { #{{{
 	done
 
 	# Remove meta files
-	rm "$db_files_file"
-	rm "$db_backup_file"
-	rm "$db_version_file"
-	rm "$db_info_file"
+	rm -rf "${db_prefix_pkg}"
 
 	# Clean up db
-	remove_empty_dirs "${pkgix_prefix}/${DB_PREFIX}"
+	remove_invalid_symlinks "${db_prefix}"
+	remove_empty_dirs "${db_prefix}"
 
 	# Set package as removed
-	sed -i "s:^.|${pkg_name}$:r|${pkg_name}:" "${pkgix_prefix}/${DB_PREFIX}.db"
+	sed -i "s:^.|${pkg_name}$:r|${pkg_name}:" "${db_prefix}.db"
 
 	msg_printf "${CgrnB}%s (%s)${Crst} "$"successfully removed.\n" "$pkg_name" "$version"
 	log_printf "$pkgix_prefix" "%s (%s) "$"removed\n" "$pkg_name" "$version"
@@ -1603,6 +1663,7 @@ cmd_avail() { #{{{
 						echo " Website      : ${website:-}"
 						echo " License      : ${license[*]:+${license[*]}}"
 						echo " Depends      : ${depends[*]:+${depends[*]}}"
+						echo " Provides     : ${provides[*]:+${provides[*]}}"
 					else
 						if [[ "$metapkg" != "$METAPKG_DUMMY" ]]; then
 							echo " Metapackage -> $metapkg"
@@ -1721,6 +1782,7 @@ cmd_show() { #{{{
 					echo " Website      : ${website:-}"
 					echo " License      : ${license[*]:+${license[*]}}"
 					echo " Depends      : ${depends[*]:+${depends[*]}}"
+					echo " Provides     : ${provides[*]:+${provides[*]}}"
 					echo " Install date : ${installdate:-}"
 					echo " Reason       : ${reason:-}"
 
@@ -1732,11 +1794,11 @@ cmd_show() { #{{{
 				break
 			else
 				# indicate not yet found, continue search
-				db_prefix=""
+				db_prefix_pkg=""
 			fi
 		done
 
-		if [[ -z "$db_prefix" ]]; then
+		if [[ -z "$db_prefix_pkg" ]]; then
 			die $"'%s' not found!\n" "$pkg_name"
 		fi
 
