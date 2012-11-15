@@ -1609,7 +1609,7 @@ cmd_remove() { #{{{
 } #}}}
 
 #============================================================================
-# cmd_avail
+# cmd_avail [pkg_name...]
 #
 cmd_avail() { #{{{
 	if (( $# == 0 )); then
@@ -1844,6 +1844,54 @@ sanitize_repos() { #{{{
 } #}}}
 
 #============================================================================
+# exit_cleanup
+#
+exit_cleanup() { #{{{
+	[[ -n "$__lock_held" ]] && unlock_prefix "$__lock_held" || :
+	[[ -n "$__repo_cache_dir" && -d "$__repo_cache_dir" ]] && rm -rf "$__repo_cache_dir" || :
+
+	trap - EXIT
+} #}}}
+
+#============================================================================
+# trap_ERR errcode lineno command [traceback...]
+#
+trap_ERR() { #{{{
+	local errcode="$1"
+	local lineno="$2"
+	local command="$3"
+	shift 3
+	local traceback=""
+
+	[[ -n "$*" ]] && printf -v traceback "\n    ${CredB}=>${Crst} in %s" "$@"
+	error_printf "line %s - '%s' failed (code=%s)%s\n" "$lineno" "$command" "$errcode" "$traceback"
+	exit 42
+} #}}}
+
+#============================================================================
+# reset_traps
+# Resets or initializes traps
+#
+reset_traps() { #{{{
+	trap '{ msg_printf $"TERM signal caught, exiting...\n"; exit 42; }' TERM HUP QUIT
+	trap '{ msg_printf $"User aborted.\n"; exit 42; }' INT
+	trap 'trap_ERR "$?" "$LINENO" "$BASH_COMMAND" "${FUNCNAME[@]:+${FUNCNAME[@]}}"' ERR
+	trap 'exit_cleanup' EXIT
+} #}}}
+
+#============================================================================
+# prog_version
+#
+prog_version() { #{{{
+	echo "$PROGNAME $PROG_VERSION"
+	echo
+	echo "Copyright (C) 2012, Marco Elver <me@marcoelver.com>"
+	echo
+	echo "This is free software; see the source for copying conditions."
+	echo "There is NO WARRANTY, to the extent permitted by law."
+} #}}}
+
+#============================================================================
 # prog_usage
 # Use *spaces* to indent printed text!!
 #
@@ -1891,13 +1939,14 @@ prog_usage() { #{{{
 		echo
 		printf -- $"See '%s help <command>' for more information on a command.\n" "$PROGNAME"
 	else
-		case "${1:-}" in
+		local help_cmd="$(get_real_cmd "${1:-}")"
+		case "$help_cmd" in
 			install|upgrade)
 				printf -- $"Usage: %s %s [-f|--force] [-d|--nodeps] [-r|--reinstall]\n\
                      [-k|--keep-build-dir] [--ignore-checksums]\n\
-                     [--asdeps] [--asexplicit]\n" "$PROGNAME" "$1"
+                     [--asdeps] [--asexplicit]\n" "$PROGNAME" "$help_cmd"
 
-				if [[ "$1" == "install" ]]; then
+				if [[ "$help_cmd" == "install" ]]; then
 					printf -- $"                     <prefix> <pkgs>...\n"
 				else
 					printf -- $"                     <prefixes>... [-- <pkgs>...]\n"
@@ -1936,7 +1985,7 @@ prog_usage() { #{{{
         Set reason for all selected packages to explicitly installed.\n"
 				;;
 			remove)
-				printf -- $"Usage: %s %s [-P|--purge]\n" "$PROGNAME" "$1"
+				printf -- $"Usage: %s %s [-P|--purge]\n" "$PROGNAME" "$help_cmd"
 				echo
 				printf -- $"Options:\n"
 				printf -- $"\
@@ -1944,7 +1993,7 @@ prog_usage() { #{{{
         Force removal of all installed files, even those marked for backup.\n"
 				;;
 			show)
-				printf -- $"Usage: %s %s [-l|--list] (<prefixes>... --|<prefix>) <pkgs>...\n" "$PROGNAME" "$1"
+				printf -- $"Usage: %s %s [-l|--list] (<prefixes>... --|<prefix>) <pkgs>...\n" "$PROGNAME" "$help_cmd"
 				echo
 				printf -- $"Options:\n"
 				printf -- $"\
@@ -1952,7 +2001,7 @@ prog_usage() { #{{{
         List installed package files.\n"
 				;;
 			list)
-				printf -- $"Usage: %s %s [-e|--explicit] [-d|--depends] [-u|--unrequired] <prefixes>...\n" "$PROGNAME" "$1"
+				printf -- $"Usage: %s %s [-e|--explicit] [-d|--depends] [-u|--unrequired] <prefixes>...\n" "$PROGNAME" "$help_cmd"
 				echo
 				printf -- $"Options:\n"
 				printf -- $"\
@@ -1967,10 +2016,10 @@ prog_usage() { #{{{
         checks dependencies between all listed <prefixes>.\n"
 				;;
 			showenv|chenv)
-				printf -- $"Usage: %s %s <prefixes>...\n" "$PROGNAME" "$1"
+				printf -- $"Usage: %s %s <prefixes>...\n" "$PROGNAME" "$help_cmd"
 				;;
 			avail)
-				printf -- $"Usage: %s %s [<pkgs>...]\n" "$PROGNAME" "$1"
+				printf -- $"Usage: %s %s [<pkgs>...]\n" "$PROGNAME" "$help_cmd"
 				echo
 				printf -- $"\
 If a list of <pkgs> is provided, displays detailed information about the\n\
@@ -1978,7 +2027,7 @@ packages found; otherwise, a short list of all packages in available\n\
 repositories is displayed.\n"
 				;;
 			help)
-				printf -- $"Usage: %s %s <command>\n" "$PROGNAME" "$1"
+				printf -- $"Usage: %s %s <command>\n" "$PROGNAME" "$help_cmd"
 				;;
 			*)
 				printf -- $"Please specify valid command.\n"
@@ -1986,54 +2035,6 @@ repositories is displayed.\n"
 				;;
 		esac
 	fi
-} #}}}
-
-#============================================================================
-# prog_version
-#
-prog_version() { #{{{
-	echo "$PROGNAME $PROG_VERSION"
-	echo
-	echo "Copyright (C) 2012, Marco Elver <me@marcoelver.com>"
-	echo
-	echo "This is free software; see the source for copying conditions."
-	echo "There is NO WARRANTY, to the extent permitted by law."
-} #}}}
-
-#============================================================================
-# exit_cleanup
-#
-exit_cleanup() { #{{{
-	[[ -n "$__lock_held" ]] && unlock_prefix "$__lock_held" || :
-	[[ -n "$__repo_cache_dir" && -d "$__repo_cache_dir" ]] && rm -rf "$__repo_cache_dir" || :
-
-	trap - EXIT
-} #}}}
-
-#============================================================================
-# trap_ERR errcode lineno command [traceback...]
-#
-trap_ERR() { #{{{
-	local errcode="$1"
-	local lineno="$2"
-	local command="$3"
-	shift 3
-	local traceback=""
-
-	[[ -n "$*" ]] && printf -v traceback "\n    ${CredB}=>${Crst} in %s" "$@"
-	error_printf "line %s - '%s' failed (code=%s)%s\n" "$lineno" "$command" "$errcode" "$traceback"
-	exit 42
-} #}}}
-
-#============================================================================
-# reset_traps
-# Resets or initializes traps
-#
-reset_traps() { #{{{
-	trap '{ msg_printf $"TERM signal caught, exiting...\n"; exit 42; }' TERM HUP QUIT
-	trap '{ msg_printf $"User aborted.\n"; exit 42; }' INT
-	trap 'trap_ERR "$?" "$LINENO" "$BASH_COMMAND" "${FUNCNAME[@]:+${FUNCNAME[@]}}"' ERR
-	trap 'exit_cleanup' EXIT
 } #}}}
 
 #============================================================================
@@ -2065,7 +2066,7 @@ expand_short_opts() { #{{{
 } #}}}
 
 #============================================================================
-# run_cmd
+# run_cmd args..
 # command wrapper
 #
 run_cmd() { #{{{
@@ -2117,6 +2118,22 @@ run_cmd() { #{{{
 } #}}}
 
 #============================================================================
+# get_real_cmd cmd
+# Get real command name if alias is provided, else just returns $cmd.
+#
+get_real_cmd() { #{{{
+	local _cmd="$1"
+	# Command aliases
+	case "$_cmd" in
+		in) echo "install" ;;
+		up) echo "upgrade" ;;
+		rm) echo "remove"  ;;
+		ls) echo "list"    ;;
+		*)  echo "$_cmd"   ;;
+	esac
+} #}}}
+
+#============================================================================
 # MAIN
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # {{{
@@ -2162,7 +2179,7 @@ while :; do
 done
 
 sanitize_repos
-cmd="${1:-}"
+cmd="$(get_real_cmd "${1:-}")"
 shift || :
 
 #============================================================================
