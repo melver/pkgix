@@ -1146,7 +1146,7 @@ pkg_install() { #{{{
 
 			# Is metapackage, check if satisfied
 			if (( ! is_reinstall )) && sourced_pkg_call satisfied; then
-				if (( ! arg_force )); then
+				if (( ! arg_reinstall )) || [[ "$metapkg" == "$METAPKG_DUMMY" ]]; then
 					msg_printf $"Metapackage '%s' satisfied.\n" "$next_pkg_name"
 					exit $EXIT_OK
 				else
@@ -1167,7 +1167,7 @@ pkg_install() { #{{{
 		done
 
 		if (( ! is_reinstall )) && sourced_pkg_call isinstalled; then
-			if (( ! arg_force )); then
+			if (( ! arg_reinstall )); then
 				msg_printf $"'%s' already available outside of '%s', skipping...\n" "$pkg_name" "$pkgix_prefix"
 				exit $EXIT_OK
 			else
@@ -1845,17 +1845,17 @@ prog_usage() { #{{{
 				printf -- $"Options:\n"
 				printf -- $"\
     -f, --force\n\
-        Force installation of programs that are: already available outside of\n\
-        <prefixes>; satisfied metapackages; incompatible with the current system;\n\
-        conflicting with already installed files.\n\
-        Also forces overwriting files which were normally preserved (see backup).\n"
+        Force installation of packages that are: incompatible with the current\n\
+        system; conflicting with already installed files. Also forces\n\
+        overwriting files which were normally preserved (backup).\n"
 				printf -- $"\
     -d, --nodeps\n\
         Ignore dependenciy check and do not install dependencies.\n"
 				printf -- $"\
     -r, --reinstall\n\
-        Reinstall non-dependency, explicitly selected packages. When upgrading,\n\
-        reinstall all installed packages.\n"
+        Reinstalls packages that are: already available outside of <prefixes>;\n\
+        satisfied metapackages; already installed. When upgrading, all\n\
+        packages being upgraded will be reinstalled, even if up to date.\n"
 				printf -- $"\
     -k, --keep-build-dir\n\
         Keeps the build directory.\n"
