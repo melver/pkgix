@@ -17,10 +17,12 @@ MSGFMT = msgfmt -c
 
 TRANSLATIONS = $(shell cd po && for po in *.po; do echo "$(LOCALEDIR)/$${po%%.po}/LC_MESSAGES/$(PROGNAME).mo"; done)
 
-all: translations
+all: translations doc
 translations: $(TRANSLATIONS)
+doc:
+	$(MAKE) -C doc man
 
-.PHONY: all translations
+.PHONY: all translations doc
 
 $(LOCALEDIR)/%/LC_MESSAGES/$(PROGNAME).mo: po/%.po
 	mkdir -p $(shell dirname "$@")
