@@ -1187,14 +1187,23 @@ pkg_db_info_query() { #{{{
 } #}}}
 
 #============================================================================
-# db_list_installed
+# db_list_installed pkgix_prefix [from_backup]
+# If from_backup is 1, then copy the existing db file, create a backup of it
+# and then read from it instead.
 #
 db_list_installed() { #{{{
 	local pkgix_prefix="$1"
+	local from_backup="${2:-0}"
+	local db_file="${pkgix_prefix}/${DB_PREFIX}.db"
 
-	if [[ -f "${pkgix_prefix}/${DB_PREFIX}.db" ]]; then
+	if [[ -f "$db_file" ]]; then
+		if (( from_backup )); then
+			cp "$db_file" "${db_file}.bak"
+			db_file="${db_file}.bak"
+		fi
+
 		local pkg_name
-		grep "^i|" "${pkgix_prefix}/${DB_PREFIX}.db" |
+		grep "^i|" "$db_file" |
 		while read pkg_name; do
 			pkg_name="${pkg_name##i|}"
 			if ! pkg_db_isinstalled "$pkgix_prefix" "$pkg_name"; then
@@ -1637,7 +1646,7 @@ prefix_upgrade() { #{{{
 
 	lock_prefix "$pkgix_prefix" || exit $EXIT_ERR
 
-	db_list_installed "$pkgix_prefix" |
+	db_list_installed "$pkgix_prefix" 1 |
 	while read pkg_name; do
 		# If package list provided, filter by that list
 		if (( $# > 0 )); then
