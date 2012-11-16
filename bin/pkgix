@@ -940,48 +940,61 @@ unset_sourced_pkg() { #{{{
 } #}}}
 
 #============================================================================
-# pkg_db_isinstalled pkgix_prefix pkg_name [compare_version]
-# If compare_version is provided, in the format of:
-# ("<="|">="|"<"|">"|"=")<version>
+# strcmp_op lhs op_rhs
+# Compares lhs with op_rhs, which is in the format of:
+# ("<="|">="|"<"|">"|"=")<alpha-numeric-string>
 # then a bash string comparison (sorted lexicographically) will be performed.
+#
+strcmp_op() { #{{{
+	local lhs="$1"
+	local op_rhs="$2"
+
+	case "$op_rhs" in
+		"<="*)
+			[[ "$lhs" == "${op_rhs##<=}" || "$lhs" < "${op_rhs##<=}" ]] \
+				&& return $RET_OK \
+				|| return $RET_ERR
+			;;
+		">="*)
+			[[ "$lhs" == "${op_rhs##>=}" || "$lhs" > "${op_rhs##>=}" ]] \
+				&& return $RET_OK \
+				|| return $RET_ERR
+			;;
+		"<"*)
+			[[ "$lhs" < "${op_rhs##<}" ]] \
+				&& return $RET_OK \
+				|| return $RET_ERR
+			;;
+		">"*)
+			[[ "$lhs" > "${op_rhs##>}" ]] \
+				&& return $RET_OK \
+				|| return $RET_ERR
+			;;
+		"="*)
+			[[ "$lhs" == "${op_rhs##=}" ]] \
+				&& return $RET_OK \
+				|| return $RET_ERR
+			;;
+		*) die ;;
+	esac
+} #}}}
+
+#============================================================================
+# pkg_db_isinstalled pkgix_prefix pkg_name [cmp_version]
+# Optionally compares pkg_name against version in cmp_version using
+# strcmp_op.
 #
 pkg_db_isinstalled() { #{{{
 	local pkgix_prefix="$1"
 	local pkg_name="$2"
-	local compare_version="${3:-}"
+	local cmp_version="${3:-}"
 	local db_prefix_pkg="${pkgix_prefix}/${DB_PREFIX}/${pkg_name}"
 
 	if [[ -f "${db_prefix_pkg}/version" && -f "${db_prefix_pkg}/files" ]]; then
-		if [[ -n "$compare_version" ]]; then
-			local lhs="$(<"${db_prefix_pkg}/version")"
-			case "$compare_version" in
-				"<="*)
-					[[ "$lhs" == "${compare_version##<=}" || "$lhs" < "${compare_version##<=}" ]] \
-						&& return $RET_OK \
-						|| return $RET_ERR
-					;;
-				">="*)
-					[[ "$lhs" == "${compare_version##>=}" || "$lhs" > "${compare_version##>=}" ]] \
-						&& return $RET_OK \
-						|| return $RET_ERR
-					;;
-				"<"*)
-					[[ "$lhs" < "${compare_version##<}" ]] \
-						&& return $RET_OK \
-						|| return $RET_ERR
-					;;
-				">"*)
-					[[ "$lhs" > "${compare_version##>}" ]] \
-						&& return $RET_OK \
-						|| return $RET_ERR
-					;;
-				"="*)
-					[[ "$lhs" == "${compare_version##=}" ]] \
-						&& return $RET_OK \
-						|| return $RET_ERR
-					;;
-				*) die ;;
-			esac
+		if [[ -n "$cmp_version" ]]; then
+			strcmp_op "$(<"${db_prefix_pkg}/version")" "$cmp_version" \
+				&& return $RET_OK \
+				|| return $RET_ERR
 		else
 			return $RET_OK
 		fi
@@ -1278,13 +1291,13 @@ pkg_install() { #{{{
 			msg_printf "${Cgrn}%s (%s)${Crst} "$"resolving dependencies...\n" "$pkg_name" "${version:-}"
 			local dep_name_ver
 			local dep_name
-			local dep_version
+			local dep_cmp_version
 			for dep_name_ver in "${depends[@]:+${depends[@]}}"; do
 				dep_name="${dep_name_ver%%[<>=]*}"
-				dep_version="${dep_name_ver##${dep_name}}"
+				dep_cmp_version="${dep_name_ver##${dep_name}}"
 
-				if [[ -n "$dep_version" ]] && pkg_db_isinstalled "$pkgix_prefix" "$dep_name" \
-					  && ! pkg_db_isinstalled "$pkgix_prefix" "$dep_name" "$dep_version"; then
+				if [[ -n "$dep_cmp_version" ]] && pkg_db_isinstalled "$pkgix_prefix" "$dep_name" \
+					  && ! pkg_db_isinstalled "$pkgix_prefix" "$dep_name" "$dep_cmp_version"; then
 					# Package is installed, but the required version is not
 					# available; let the user sort it out.
 					die $"Package dependency could not be resolved: %s (installed: %s)\n" \
@@ -1293,10 +1306,29 @@ pkg_install() { #{{{
 
 				pkg_install "$pkgix_prefix" "$dep_name" 0 "$REASON_DEPENDENCY"
 
-				if (( ! arg_dry_run )) && [[ -n "$dep_version" ]] \
-					&& ! pkg_db_isinstalled "$pkgix_prefix" "$dep_name" "$dep_version"; then
-					warning_printf $"Package dependency not fully resolved: %s (installed: %s)\n" \
-						"$dep_name_ver" "$(pkg_db_info_query "$pkgix_prefix" "$dep_name" "version")"
+				if [[ -n "$dep_cmp_version" ]]; then
+					local dep_resolved=1
+					local dep_inst_version
+					if (( arg_dry_run )); then
+						dep_inst_version="$(
+							unset_sourced_pkg
+							source_pkg "$dep_name"
+							if ! strcmp_op "${version:-}" "$dep_cmp_version"; then
+								echo "${version:-}"
+							else
+								echo "="
+							fi
+						)"
+						[[ "$dep_inst_version" != "=" ]] && dep_resolved=0 || :
+					elif ! pkg_db_isinstalled "$pkgix_prefix" "$dep_name" "$dep_cmp_version"; then
+						dep_resolved=0
+						dep_inst_version="$(pkg_db_info_query "$pkgix_prefix" "$dep_name" "version")"
+					fi
+
+					if (( ! dep_resolved )); then
+						warning_printf $"Package dependency not fully resolved: %s (installed: %s)\n" \
+							"$dep_name_ver" "$dep_inst_version"
+					fi
 				fi
 			done
 		else
