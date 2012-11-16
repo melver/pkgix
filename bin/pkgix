@@ -990,6 +990,17 @@ pkg_db_isinstalled() { #{{{
 	local cmp_version="${3:-}"
 	local db_prefix_pkg="${pkgix_prefix}/${DB_PREFIX}/${pkg_name}"
 
+	if (( arg_dry_run )) && dry_pkg_isinstalled "$pkgix_prefix" "$pkg_name"; then
+		# Check new dry installed packages first, then check actually installed packages.
+		if [[ -n "$cmp_version" ]]; then
+			strcmp_op "$(dry_pkg_version "$pkgix_prefix" "$pkg_name")" "$cmp_version" \
+				&& return $RET_OK \
+				|| return $RET_ERR
+		else
+			return $RET_OK
+		fi
+	fi
+
 	if [[ -f "${db_prefix_pkg}/version" && -f "${db_prefix_pkg}/files" ]]; then
 		if [[ -n "$cmp_version" ]]; then
 			strcmp_op "$(<"${db_prefix_pkg}/version")" "$cmp_version" \
@@ -1146,6 +1157,14 @@ pkg_db_info_query() { #{{{
 	local property="$3"
 	local default="${4:-}"
 
+	if (( arg_dry_run )) && dry_pkg_isinstalled "$pkgix_prefix" "$pkg_name"; then
+		case "$property" in
+			version) dry_pkg_version "$pkgix_prefix" "$pkg_name" ;;
+			*) die ;;
+		esac
+		return
+	fi
+
 	(
 		local result
 
@@ -1187,6 +1206,28 @@ db_list_installed() { #{{{
 		done
 	fi
 } #}}}
+
+#============================================================================
+# dry_pkg_* pkgix_prefix pkg_name
+#
+# {{{
+if type -p mktemp > /dev/null; then
+	__dry_db_dir="$(mktemp -du)-${PROGNAME}"
+else
+	__dry_db_dir="/tmp/.${PROGNAME}-dry-db"
+fi
+dry_pkg_install() {
+	local dry_db_dir="${__dry_db_dir}/${1}/${2}"
+	mkdir -p "$dry_db_dir"
+	echo "${version:-}" > "${dry_db_dir}/version"
+}
+dry_pkg_isinstalled() {
+	[[ -d "${__dry_db_dir}/${1}/${2}" ]]
+}
+dry_pkg_version() {
+	echo "$(<"${__dry_db_dir}/${1}/${2}/version")"
+}
+# }}}
 
 #============================================================================
 # pkg_install pkgix_prefix pkg_name [reinstall [reason]]
@@ -1306,29 +1347,10 @@ pkg_install() { #{{{
 
 				pkg_install "$pkgix_prefix" "$dep_name" 0 "$REASON_DEPENDENCY"
 
-				if [[ -n "$dep_cmp_version" ]]; then
-					local dep_resolved=1
-					local dep_inst_version
-					if (( arg_dry_run )); then
-						dep_inst_version="$(
-							unset_sourced_pkg
-							source_pkg "$dep_name"
-							if ! strcmp_op "${version:-}" "$dep_cmp_version"; then
-								echo "${version:-}"
-							else
-								echo "="
-							fi
-						)"
-						[[ "$dep_inst_version" != "=" ]] && dep_resolved=0 || :
-					elif ! pkg_db_isinstalled "$pkgix_prefix" "$dep_name" "$dep_cmp_version"; then
-						dep_resolved=0
-						dep_inst_version="$(pkg_db_info_query "$pkgix_prefix" "$dep_name" "version")"
-					fi
-
-					if (( ! dep_resolved )); then
-						warning_printf $"Package dependency not fully resolved: %s (installed: %s)\n" \
-							"$dep_name_ver" "$dep_inst_version"
-					fi
+				if [[ -n "$dep_cmp_version" ]] \
+					&& ! pkg_db_isinstalled "$pkgix_prefix" "$dep_name" "$dep_cmp_version"; then
+					warning_printf $"Package dependency not fully resolved: %s (installed: %s)\n" \
+						"$dep_name_ver" "$(pkg_db_info_query "$pkgix_prefix" "$dep_name" "version")"
 				fi
 			done
 		else
@@ -1336,6 +1358,7 @@ pkg_install() { #{{{
 		fi
 
 		if (( arg_dry_run )); then
+			dry_pkg_install "$pkgix_prefix" "$pkg_name"
 			msg_printf "${CgrnB}%s (%s)${Crst} "$"dry install complete.\n" "$pkg_name" "${version:-}"
 			exit $EXIT_OK
 		fi
@@ -1944,6 +1967,7 @@ sanitize_repos() { #{{{
 exit_cleanup() { #{{{
 	[[ -n "$__lock_held" ]] && unlock_prefix "$__lock_held" || :
 	[[ -n "$__repo_cache_dir" && -d "$__repo_cache_dir" ]] && rm -rf "$__repo_cache_dir" || :
+	[[ -n "$__dry_db_dir" && -d "$__dry_db_dir" ]] && rm -rf "$__dry_db_dir" || :
 
 	trap - EXIT
 } #}}}
@@ -2243,6 +2267,12 @@ arg_quiet=0
 arg_noconfirm=0
 arg_debug=0
 
+##
+# Only used for some commands, but still needed by functions called
+# by commands not making use of these options.
+#
+arg_dry_run=0 # install, upgrade
+
 while :; do
 	case "${1:-}" in
 		-r|--repo)
@@ -2286,7 +2316,6 @@ case "$cmd" in
 		arg_reinstall=0
 		arg_keep_build_dir=0
 		arg_ignore_checksums=0
-		arg_dry_run=0
 		arg_reason_dependency=0
 		arg_reason_explicit=0
 
