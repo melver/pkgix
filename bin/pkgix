@@ -416,6 +416,7 @@ else
 	# and then the package itself; will not output a package name twice.
 	# This essentially results in a topological sort of the dependency graph
 	# for all requested packages.
+	# Only lists installed packages.
 	#
 	dep_topo_sort() {
 		local pkgix_prefix="$1"
@@ -431,9 +432,10 @@ else
 	__dep_topo_sort_visit() {
 		local pkgix_prefix="$1"
 		local pkg_name="$2"
-		set_db_vars "$pkgix_prefix" "$pkg_name" || pkg_name="$real_pkg_name"
 
-		[[ -n "${pkgs_visited["$pkg_name"]:-}" ]] && return
+		db_isinstalled "$pkgix_prefix" "$pkg_name" || return
+		set_db_vars "$pkgix_prefix" "$pkg_name" || pkg_name="$real_pkg_name"
+		[[ -n "${pkgs_visited["$pkg_name"]:-}" ]] && return || :
 
 		pkgs_visited["$pkg_name"]=1
 
