@@ -273,8 +273,10 @@ in_list() { #{{{
 # IFS_expand to_var from_var [set_IFS]
 # Generates code to expands an IFS separated string into an array.
 # Use eval "$(IFS_expand ..)"; without eval, it would not be possible to set
-# scoped variables, such as function-local ones. Setting a global variable
-# to hold the result is fragile, especially with arrays.
+# or read from scoped variables, such as function-local ones. I know, eval is
+# not desireable, but in this case am very certain that it won't lead to any of
+# its dreaded ill-effects (arbitrary code-injection): all 3 parameters must be
+# hard-coded strings in the place this function is called.
 #
 IFS_expand() { #{{{
 	local to_var="$1"
@@ -1017,6 +1019,10 @@ pkg_db_isinstalled() { #{{{
 #============================================================================
 # set_db_vars pkgix_prefix pkg_name
 #
+# Returns true if $pkg_name is not a provides target, false
+# otherwise and resolves the real_pkg_name variable, which can be
+# used to get the real package name.
+#
 set_db_vars() { #{{{
 	local pkgix_prefix="$1"
 	local pkg_name="$2"
@@ -1026,6 +1032,20 @@ set_db_vars() { #{{{
 	db_backup_file="${db_prefix_pkg}/files.backup"
 	db_version_file="${db_prefix_pkg}/version"
 	db_info_file="${db_prefix_pkg}/info"
+
+	# Check if valid symlink to db dir (provides target)
+	if [[ -L "$db_prefix_pkg" && -d "$db_prefix_pkg" ]]; then
+		# Resolve both path to pkg-dir and db-prefix, in case there are other
+		# symlink along the way.
+		db_prefix_pkg="$(resolv_dir_symlink "$db_prefix_pkg")"
+		db_prefix="$(resolv_dir_symlink "$db_prefix")"
+		real_pkg_name="${db_prefix_pkg##${db_prefix}/}"
+		set_db_vars "$pkgix_prefix" "$real_pkg_name" || :
+
+		return $RET_ERR
+	fi
+
+	return $RET_OK
 } #}}}
 
 #============================================================================
@@ -1043,6 +1063,14 @@ unset_db_vars() { #{{{
 #============================================================================
 # pkg_db_install pkgix_prefix pkg_name
 #
+# Notes about the file, created or updated at the end of this function:
+#   The db file should maintain the order in which packages were installed;
+# upgrade performs package upgrade in the order they were installed. Entries
+# are not deleted upon removal, so that if they are reinstalled, the order is
+# maintained.  This does not yet fully solve the problem of package upgrades
+# which pull new dependencies; for this, upgrade itself, must order
+# dependencies first, regardless of initial install order.
+#
 pkg_db_install() { #{{{
 	local pkgix_prefix="$1"
 	local pkg_name="$2"
@@ -1051,7 +1079,7 @@ pkg_db_install() { #{{{
 	local pkgnew_files_file="$5"
 	local staging_backup_file="$6"
 
-	set_db_vars "$pkgix_prefix" "$pkg_name"
+	set_db_vars "$pkgix_prefix" "$pkg_name" || die
 
 	# Create installed database folders
 	mkdir -p "${db_prefix_pkg}"
@@ -1113,12 +1141,7 @@ pkg_db_install() { #{{{
 	[[ -z "${license[*]:+${license[*]}}" ]] && warning_printf $"Empty 'license' field in package description file of '%s'!\n" "$pkg_name"
 	[[ -z "${website:-}" ]] && warning_printf $"Empty 'website' field in package description file of '%s'!\n" "$pkg_name"
 
-	# The db file is important for upgrading packages in the order they were installed!
-	# As the entries are not deleted upon removal, over time, a dependence ordering
-	# is being built, so that if removed packages are reinstalled, upgrading still
-	# works as before.
 	local db_file="${db_prefix}.db"
-
 	if [[ -f "$db_file" ]] && grep -q "^.|${pkg_name}$" "$db_file"; then
 		sed -i "s:^.|${pkg_name}$:i|${pkg_name}:" "$db_file"
 	else
@@ -1168,7 +1191,7 @@ pkg_db_info_query() { #{{{
 	(
 		local result
 
-		set_db_vars "$pkgix_prefix" "$pkg_name"
+		set_db_vars "$pkgix_prefix" "$pkg_name" || :
 
 		case "$property" in
 			version)
@@ -1240,6 +1263,12 @@ dry_pkg_version() {
 
 #============================================================================
 # pkg_install pkgix_prefix pkg_name [reinstall [reason]]
+#
+# pkgix_prefix: the prefix path
+# pkg_name: full package name as found in repository
+# reinstall: if set to 1, reinstalls an already installed package
+# reason: $REASON_EXPLICIT or $REASON_DEPENDENCY;
+#	for tracking install reason in the db.
 #
 pkg_install() { #{{{
 	local pkgix_prefix="$1"
@@ -1512,17 +1541,7 @@ pkg_remove() { #{{{
 	local pkg_name="$2"
 	local purge="${3:-0}"
 
-	set_db_vars "$pkgix_prefix" "$pkg_name"
-
-	# Check if valid symlink to db dir (provides target)
-	if [[ -L "$db_prefix_pkg" && -d "$db_prefix_pkg" ]]; then
-		# Resolve both path to pkg-dir and db-prefix, in case there are other
-		# symlink along the way.
-		db_prefix_pkg="$(resolv_dir_symlink "$db_prefix_pkg")"
-		db_prefix="$(resolv_dir_symlink "$db_prefix")"
-		pkg_name="${db_prefix_pkg##${db_prefix}/}"
-		set_db_vars "$pkgix_prefix" "$pkg_name"
-	fi
+	set_db_vars "$pkgix_prefix" "$pkg_name" || pkg_name="$real_pkg_name"
 
 	if ! pkg_db_isinstalled "$pkgix_prefix" "$pkg_name"; then
 		die $"'%s' not found!\n" "$pkg_name"
@@ -1814,7 +1833,7 @@ cmd_list() { #{{{
 		db_list_installed "$pkgix_prefix" | sort |
 		while read pkg_name; do
 			(
-				set_db_vars "$pkgix_prefix" "$pkg_name"
+				set_db_vars "$pkgix_prefix" "$pkg_name" || :
 
 				if (( ! arg_quiet || arg_list_explicit || arg_list_depends || arg_list_unrequired )); then
 					source "$db_info_file"
@@ -1838,7 +1857,7 @@ cmd_list() { #{{{
 							[[ -d "$_pkgix_prefix" ]] || continue && _pkgix_prefix="$(abspath "$_pkgix_prefix")"
 							db_list_installed "$_pkgix_prefix" |
 							while read _pkg_name; do
-								set_db_vars "$_pkgix_prefix" "$_pkg_name"
+								set_db_vars "$_pkgix_prefix" "$_pkg_name" || :
 
 								# Tried using grep here, but the BASH-only
 								# version is roughly 2x faster.
@@ -1892,7 +1911,7 @@ cmd_show() { #{{{
 				die $"'%s' is not a valid directory!\n" "$pkgix_prefix"
 			fi
 
-			set_db_vars "$pkgix_prefix" "$pkg_name"
+			set_db_vars "$pkgix_prefix" "$pkg_name" || pkg_name="$real_pkg_name"
 
 			if pkg_db_isinstalled "$pkgix_prefix" "$pkg_name"; then
 				if (( arg_list_files )); then
