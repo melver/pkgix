@@ -400,6 +400,58 @@ show_platform_vars() {
 #}}}
 
 #============================================================================
+# Bash 4 specific functions
+# Should still aim at providing a Bash < 4 compatible version.
+#
+# {{{
+if [[ "$BASH_VERSION" < "4" ]]; then
+	warning_printf $"Your Bash is older than version 4; some features will not work.\n"
+
+	dep_topo_sort() { cat; } # Meow
+else
+	#-----------------------------------------------------------------------
+	# dep_topo_sort pkgix_prefix
+	#
+	# Reads list of packages from stdin and list all dependecies for a package
+	# and then the package itself; will not output a package name twice.
+	# This essentially results in a topological sort of the dependency graph
+	# for all requested packages.
+	#
+	dep_topo_sort() {
+		local pkgix_prefix="$1"
+
+		(
+			declare -A pkgs_visited=()
+			local pkg_name
+			while read pkg_name; do
+				__dep_topo_sort_visit "$pkgix_prefix" "$pkg_name"
+			done
+		)
+	}
+	__dep_topo_sort_visit() {
+		local pkgix_prefix="$1"
+		local pkg_name="$2"
+		set_db_vars "$pkgix_prefix" "$pkg_name" || pkg_name="$real_pkg_name"
+
+		[[ -n "${pkgs_visited["$pkg_name"]:-}" ]] && return
+
+		pkgs_visited["$pkg_name"]=1
+
+		source "$db_info_file"
+
+		local dep_name_ver
+		for dep_name_ver in "${depends[@]:+${depends[@]}}"; do
+			__dep_topo_sort_visit "$pkgix_prefix" "${dep_name_ver%%[<>=]*}"
+		done
+
+		echo "$pkg_name"
+		unset_db_info
+		unset_db_vars
+	}
+fi
+# }}}
+
+#============================================================================
 # lock_prefix pkgix_prefix
 # Checks for existing lock, creates a lock file in pkgix_prefix if not locked.
 #
@@ -1018,6 +1070,8 @@ db_isinstalled() { #{{{
 
 #============================================================================
 # set_db_vars pkgix_prefix pkg_name
+#
+# Sets variables required to access package information from db.
 #
 # Returns true if $pkg_name is not a provides target, false
 # otherwise and resolves the real_pkg_name variable, which can be
@@ -1674,6 +1728,7 @@ prefix_upgrade() { #{{{
 	lock_prefix "$pkgix_prefix" || exit $EXIT_ERR
 
 	db_list_installed "$pkgix_prefix" 1 |
+	dep_topo_sort "$pkgix_prefix" |
 	while read pkg_name; do
 		# If package list provided, filter by that list
 		if (( $# > 0 )); then
