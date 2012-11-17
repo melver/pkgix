@@ -870,7 +870,7 @@ source_pkg() { #{{{
 	# Don't set repo as local here, as it can then be used in the package
 	# description files to get information about its source repository, and 
 	# e.g., download extra files such as patches from the repository.
-	for repo in "$prefer_repo" "${PKGIX_REPOS[@]:+${PKGIX_REPOS[@]}}"; do
+	for repo in "$prefer_repo" "${pkgix_repos[@]:+${pkgix_repos[@]}}"; do
 		[[ -z "$repo" ]] && continue || :
 		pkg_file="${repo}/$pkg_name"
 
@@ -1738,8 +1738,8 @@ prefix_upgrade() { #{{{
 		(
 			old_version="$(db_info_query "$pkgix_prefix" "$pkg_name" "version")"
 
-			# Source prefix RC-file, so that we could use PKGIX_REPOS from this
-			# RC-file in source_pkg, if set. Similiarly for PKGIX_UPGRADE_IGNORE.
+			# Source prefix RC-file, so that we could use PKGIX_UPGRADE_IGNORE
+			# from this RC-file in source_pkg, if set.
 			source_prefix_rc "$pkgix_prefix"
 
 			if ! source_pkg "$pkg_name"; then
@@ -1819,7 +1819,7 @@ cmd_remove() { #{{{
 cmd_avail() { #{{{
 	if (( $# == 0 )); then
 		local repo
-		for repo in "${PKGIX_REPOS[@]:+${PKGIX_REPOS[@]}}"; do
+		for repo in "${pkgix_repos[@]:+${pkgix_repos[@]}}"; do
 			(( ! arg_quiet )) && printf "%b" "${CbluB}-> ${CgrnB}${repo}${Crst}\n" 1>&2 || :
 			case "$repo" in
 				http://*|https://*|ftp://*)
@@ -2033,7 +2033,7 @@ cmd_chenv() { #{{{
 
 #============================================================================
 # sanitize_repos
-# Turn PKGIX_REPOS into an array and sanitize some URLs
+# Turn PKGIX_REPOS into pkgix_repos array; sanitize URLs.
 #
 sanitize_repos() { #{{{
 	local old_repos
@@ -2044,14 +2044,14 @@ sanitize_repos() { #{{{
 		eval "$(IFS_expand old_repos PKGIX_REPOS "$URL_SEP")"
 	fi
 
-	PKGIX_REPOS=()
+	pkgix_repos=()
 
 	local repo
 	for repo in "${old_repos[@]:+${old_repos[@]}}"; do
 		[[ "$repo" =~ ^file:// ]] && repo="${repo##file://}"
 		repo=${repo%%/}
 
-		PKGIX_REPOS+=("${repo}")
+		pkgix_repos+=("${repo}")
 	done
 } #}}}
 
