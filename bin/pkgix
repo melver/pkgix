@@ -1439,14 +1439,19 @@ pkg_install() { #{{{
 				dep_name="${dep_name_ver%%[<>=]*}"
 				dep_cmp_version="${dep_name_ver##${dep_name}}"
 
-				pkg_install "$pkgix_prefix" "$dep_name" 0 "$REASON_DEPENDENCY"
-
-				if ! db_isinstalled "$pkgix_prefix" "$dep_name" "$dep_cmp_version"; then
-					# Either package is not installed, in which case something went horribly
-					# wrong, or the package is installed but the required version is not.
+				if db_isinstalled "$pkgix_prefix" "$dep_name" \
+				   && ! db_isinstalled "$pkgix_prefix" "$dep_name" "$dep_cmp_version"; then
+					# The package is installed, but the required version is
+					# not; note that we only check for the installed version if
+					# this dependency is already installed. If a package
+					# installs a package as dependecy, but the version is
+					# wrong, we won't complain, as this should be solved in the
+					# package file.
 					die $"Package dependency could not be resolved: %s (installed: %s)\n" \
 						"$dep_name_ver" "$(db_info_query "$pkgix_prefix" "$dep_name" "version" "None")"
 				fi
+
+				pkg_install "$pkgix_prefix" "$dep_name" 0 "$REASON_DEPENDENCY"
 			done
 		else
 			warning_printf $"Ignoring dependencies.\n"
