@@ -1352,6 +1352,8 @@ pkg_install() { #{{{
 			$_fn_printf "${Cgrn}%s${Crst} "$"is available\n" "$pkg_name"
 			return $RET_OK
 		else
+			# Is reinstall just says if the package is already in the prefix
+			# but should be reinstalled.
 			is_reinstall=1
 
 			# Set reason based on user-override if provided, otherwise preserve previous reason
@@ -1393,7 +1395,8 @@ pkg_install() { #{{{
 
 			# Is metapackage, check if satisfied
 			if (( ! is_reinstall )) && sourced_pkg_call satisfied; then
-				if (( ! arg_reinstall )) || [[ "$metapkg" == "$METAPKG_DUMMY" ]]; then
+				if (( ! arg_reinstall )) || [[ "$reason" != "$REASON_EXPLICIT" ]] \
+					|| [[ "$metapkg" == "$METAPKG_DUMMY" ]]; then
 					msg_printf $"Metapackage '%s' satisfied.\n" "$next_pkg_name"
 					exit $EXIT_OK
 				else
@@ -1414,7 +1417,7 @@ pkg_install() { #{{{
 		done
 
 		if (( ! is_reinstall )) && sourced_pkg_call isinstalled; then
-			if (( ! arg_reinstall )); then
+			if (( ! arg_reinstall )) || [[ "$reason" != "$REASON_EXPLICIT" ]]; then
 				msg_printf $"'%s' already available outside of '%s', skipping...\n" "$pkg_name" "$pkgix_prefix"
 				exit $EXIT_OK
 			else
