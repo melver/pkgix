@@ -982,20 +982,20 @@ strcmp_op() { #{{{
 } #}}}
 
 #============================================================================
-# pkg_db_isinstalled pkgix_prefix pkg_name [cmp_version]
+# db_isinstalled pkgix_prefix pkg_name [cmp_version]
 # Optionally compares pkg_name against version in cmp_version using
 # strcmp_op.
 #
-pkg_db_isinstalled() { #{{{
+db_isinstalled() { #{{{
 	local pkgix_prefix="$1"
 	local pkg_name="$2"
 	local cmp_version="${3:-}"
 	local db_prefix_pkg="${pkgix_prefix}/${DB_PREFIX}/${pkg_name}"
 
-	if (( arg_dry_run )) && dry_pkg_isinstalled "$pkgix_prefix" "$pkg_name"; then
+	if (( arg_dry_run )) && dry_db_isinstalled "$pkgix_prefix" "$pkg_name"; then
 		# Check new dry installed packages first, then check actually installed packages.
 		if [[ -n "$cmp_version" ]]; then
-			strcmp_op "$(dry_pkg_version "$pkgix_prefix" "$pkg_name")" "$cmp_version" \
+			strcmp_op "$(dry_db_info_query "$pkgix_prefix" "$pkg_name" "version")" "$cmp_version" \
 				&& return $RET_OK \
 				|| return $RET_ERR
 		else
@@ -1058,10 +1058,11 @@ unset_db_vars() { #{{{
 	unset db_backup_file
 	unset db_version_file
 	unset db_info_file
+	unset real_pkg_name
 } #}}}
 
 #============================================================================
-# pkg_db_install pkgix_prefix pkg_name
+# db_install pkgix_prefix pkg_name
 #
 # Notes about the file, created or updated at the end of this function:
 #   The db file should maintain the order in which packages were installed;
@@ -1071,7 +1072,7 @@ unset_db_vars() { #{{{
 # which pull new dependencies; for this, upgrade itself, must order
 # dependencies first, regardless of initial install order.
 #
-pkg_db_install() { #{{{
+db_install() { #{{{
 	local pkgix_prefix="$1"
 	local pkg_name="$2"
 	local reason="$3"
@@ -1165,7 +1166,7 @@ unset_db_info() { #{{{
 } #}}}
 
 #============================================================================
-# pkg_db_info_query pkgix_prefix pkg_name property [default]
+# db_info_query pkgix_prefix pkg_name property [default]
 #
 # Only use this function to query a single property, as it would be inefficient
 # for querying multiple properties in sequence; for this source the db_info_file
@@ -1174,15 +1175,16 @@ unset_db_info() { #{{{
 # Only echos the property as a string, and should not be used if the property
 # type is an array.
 #
-pkg_db_info_query() { #{{{
+db_info_query() { #{{{
 	local pkgix_prefix="$1"
 	local pkg_name="$2"
 	local property="$3"
 	local default="${4:-}"
 
-	if (( arg_dry_run )) && dry_pkg_isinstalled "$pkgix_prefix" "$pkg_name"; then
+	if (( arg_dry_run )) && dry_db_isinstalled "$pkgix_prefix" "$pkg_name"; then
 		case "$property" in
-			version) dry_pkg_version "$pkgix_prefix" "$pkg_name" ;;
+			version) dry_db_info_query "$pkgix_prefix" "$pkg_name" "version" ;;
+			reason) dry_db_info_query "$pkgix_prefix" "$pkg_name" "reason" ;;
 			*) die ;;
 		esac
 		return
@@ -1229,7 +1231,7 @@ db_list_installed() { #{{{
 		grep "^i|" "$db_file" |
 		while read pkg_name; do
 			pkg_name="${pkg_name##i|}"
-			if ! pkg_db_isinstalled "$pkgix_prefix" "$pkg_name"; then
+			if ! db_isinstalled "$pkgix_prefix" "$pkg_name"; then
 				warning_printf $"Inconsistent database entry: %s\n" "$pkg_name"
 				continue
 			fi
@@ -1240,7 +1242,7 @@ db_list_installed() { #{{{
 } #}}}
 
 #============================================================================
-# dry_pkg_* pkgix_prefix pkg_name
+# dry_db_* pkgix_prefix pkg_name [options]
 #
 # {{{
 if type -p mktemp > /dev/null; then
@@ -1248,16 +1250,22 @@ if type -p mktemp > /dev/null; then
 else
 	__dry_db_dir="/tmp/.${PROGNAME}-dry-db"
 fi
-dry_pkg_install() {
+dry_db_install() {
 	local dry_db_dir="${__dry_db_dir}/${1}/${2}"
+	local reason="$3"
 	mkdir -p "$dry_db_dir"
 	echo "${version:-}" > "${dry_db_dir}/version"
+	echo "$reason" > "${dry_db_dir}/reason"
 }
-dry_pkg_isinstalled() {
+dry_db_isinstalled() {
 	[[ -d "${__dry_db_dir}/${1}/${2}" ]]
 }
-dry_pkg_version() {
-	echo "$(<"${__dry_db_dir}/${1}/${2}/version")"
+dry_db_info_query() {
+	case "$3" in
+		version) echo "$(<"${__dry_db_dir}/${1}/${2}/version")" ;;
+		reason) echo "$(<"${__dry_db_dir}/${1}/${2}/reason")" ;;
+		*) die ;;
+	esac
 }
 # }}}
 
@@ -1281,7 +1289,7 @@ pkg_install() { #{{{
 		die $"'%s' is not a valid directory!\n" "$pkgix_prefix"
 	fi
 
-	if pkg_db_isinstalled "$pkgix_prefix" "$pkg_name"; then
+	if db_isinstalled "$pkgix_prefix" "$pkg_name"; then
 		if (( ! reinstall )); then
 			local _fn_printf
 			[[ "$reason" == "$REASON_EXPLICIT" ]] && _fn_printf="msg_printf" || _fn_printf="verbose_printf"
@@ -1292,7 +1300,7 @@ pkg_install() { #{{{
 
 			# Set reason based on user-override if provided, otherwise preserve previous reason
 			if (( ! arg_reason_dependency && ! arg_reason_explicit )); then
-				reason="$(pkg_db_info_query "$pkgix_prefix" "$pkg_name" "reason" "$reason")"
+				reason="$(db_info_query "$pkgix_prefix" "$pkg_name" "reason" "$reason")"
 			fi
 		fi
 	fi
@@ -1375,20 +1383,20 @@ pkg_install() { #{{{
 				dep_name="${dep_name_ver%%[<>=]*}"
 				dep_cmp_version="${dep_name_ver##${dep_name}}"
 
-				if [[ -n "$dep_cmp_version" ]] && pkg_db_isinstalled "$pkgix_prefix" "$dep_name" \
-					  && ! pkg_db_isinstalled "$pkgix_prefix" "$dep_name" "$dep_cmp_version"; then
+				if [[ -n "$dep_cmp_version" ]] && db_isinstalled "$pkgix_prefix" "$dep_name" \
+					  && ! db_isinstalled "$pkgix_prefix" "$dep_name" "$dep_cmp_version"; then
 					# Package is installed, but the required version is not
 					# available; let the user sort it out.
 					die $"Package dependency could not be resolved: %s (installed: %s)\n" \
-						"$dep_name_ver" "$(pkg_db_info_query "$pkgix_prefix" "$dep_name" "version")"
+						"$dep_name_ver" "$(db_info_query "$pkgix_prefix" "$dep_name" "version")"
 				fi
 
 				pkg_install "$pkgix_prefix" "$dep_name" 0 "$REASON_DEPENDENCY"
 
 				if [[ -n "$dep_cmp_version" ]] \
-					&& ! pkg_db_isinstalled "$pkgix_prefix" "$dep_name" "$dep_cmp_version"; then
+					&& ! db_isinstalled "$pkgix_prefix" "$dep_name" "$dep_cmp_version"; then
 					warning_printf $"Package dependency not fully resolved: %s (installed: %s)\n" \
-						"$dep_name_ver" "$(pkg_db_info_query "$pkgix_prefix" "$dep_name" "version")"
+						"$dep_name_ver" "$(db_info_query "$pkgix_prefix" "$dep_name" "version")"
 				fi
 			done
 		else
@@ -1396,7 +1404,7 @@ pkg_install() { #{{{
 		fi
 
 		if (( arg_dry_run )); then
-			dry_pkg_install "$pkgix_prefix" "$pkg_name"
+			dry_db_install "$pkgix_prefix" "$pkg_name" "$reason"
 			msg_printf "${CgrnB}%s (%s)${Crst} "$"dry install complete.\n" "$pkg_name" "${version:-}"
 			exit $EXIT_OK
 		fi
@@ -1510,7 +1518,7 @@ pkg_install() { #{{{
 			cp -a "${install_dir}/${pkgix_prefix}"/* "${pkgix_prefix}"
 		fi
 
-		pkg_db_install "$pkgix_prefix" "$pkg_name" "$reason" \
+		db_install "$pkgix_prefix" "$pkg_name" "$reason" \
 			"$staging_files_file" "$pkgnew_files_file" "$staging_backup_file"
 
 		trap - EXIT
@@ -1543,7 +1551,7 @@ pkg_remove() { #{{{
 
 	set_db_vars "$pkgix_prefix" "$pkg_name" || pkg_name="$real_pkg_name"
 
-	if ! pkg_db_isinstalled "$pkgix_prefix" "$pkg_name"; then
+	if ! db_isinstalled "$pkgix_prefix" "$pkg_name"; then
 		die $"'%s' not found!\n" "$pkg_name"
 	fi
 
@@ -1673,7 +1681,7 @@ prefix_upgrade() { #{{{
 		fi
 
 		(
-			old_version="$(pkg_db_info_query "$pkgix_prefix" "$pkg_name" "version")"
+			old_version="$(db_info_query "$pkgix_prefix" "$pkg_name" "version")"
 
 			# Source prefix RC-file, so that we could use PKGIX_REPOS from this
 			# RC-file in source_pkg, if set. Similiarly for PKGIX_UPGRADE_IGNORE.
@@ -1913,7 +1921,7 @@ cmd_show() { #{{{
 
 			set_db_vars "$pkgix_prefix" "$pkg_name" || pkg_name="$real_pkg_name"
 
-			if pkg_db_isinstalled "$pkgix_prefix" "$pkg_name"; then
+			if db_isinstalled "$pkgix_prefix" "$pkg_name"; then
 				if (( arg_list_files )); then
 					local prefix_line=""
 					(( ! arg_quiet )) && prefix_line="$pkg_name " || :
