@@ -1926,8 +1926,11 @@ cmd_list() { #{{{
 								# version is roughly 2x faster.
 								source "$db_info_file"
 								local dep_name_ver
+								local dep_name
 								for dep_name_ver in "${depends[@]:+${depends[@]}}"; do
-									if [[ "$pkg_name" == "${dep_name_ver%%[<>=]*}" ]]; then
+									dep_name="${dep_name_ver%%[<>=]*}"
+									set_db_vars "$pkgix_prefix" "$dep_name" || dep_name="$real_pkg_name"
+									if [[ "$pkg_name" == "$dep_name" ]]; then
 										verbose_printf $"'%s: %s' required by '%s: %s'\n" \
 											"$pkgix_prefix" "$pkg_name" "$_pkgix_prefix" "$_pkg_name"
 										exit $EXIT_ERR
