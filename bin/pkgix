@@ -390,7 +390,7 @@ case "$(uname -s)" in
 		esac
 
 		find_printbase() {
-			find "$@" | sed "s:^$1::" 
+			find "$@" | sed "s:^${1}/*::"
 		}
 		;;
 	*[lL]inux*)
@@ -410,7 +410,7 @@ case "$(uname -s)" in
 		: ${CHOST:="${CARCH}-unknown-${ostype}-unknown"}
 
 		find_printbase() {
-			find "$@" | sed "s:^$1::" 
+			find "$@" | sed "s:^${1}/*::"
 		}
 		;;
 esac
