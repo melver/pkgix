@@ -494,8 +494,13 @@ lock_prefix() { #{{{
 		return $RET_ERR
 	fi
 
-	[[ ! -d "${lock_file%/*}" ]] && mkdir -p "${lock_file%/*}" || :
-	: > "$lock_file"
+	[[ ! -d "${lock_file%/*}" ]] && mkdir -p "${lock_file%/*}" 2> /dev/null || :
+
+	if ! { : > "$lock_file"; } 2> /dev/null; then
+		error_printf $"Cannot create '%s'!\n" "$lock_file"
+		return $RET_ERR
+	fi
+
 	__lock_held="${pkgix_prefix}"
 	return $RET_OK
 } #}}}
@@ -1417,7 +1422,7 @@ pkg_install() { #{{{
 			unset_sourced_pkg
 
 			if ! source_pkg "$next_pkg_name"; then
-				die $"Could not find valid package description file for '%s'!\n" "$next_pkg_name"
+				die $"Cannot find valid package description file for '%s'!\n" "$next_pkg_name"
 			fi
 
 			# Not a meta-package, continue normally
@@ -1437,7 +1442,7 @@ pkg_install() { #{{{
 			# If this metapackage is only a dummy to check if a dependence is satisfied,
 			# and the above 'satisfied' function failed, this is a dead end.
 			if [[ "$metapkg" == "$METAPKG_DUMMY" ]]; then
-				die $"Metapackage '%s' could not be satisfied!\n" "$next_pkg_name"
+				die $"Metapackage '%s' cannot be satisfied!\n" "$next_pkg_name"
 			fi
 
 			# Not satisfied and not a dummy, resolve this by trying to install
@@ -1480,7 +1485,7 @@ pkg_install() { #{{{
 					# installs a package as dependecy, but the version is
 					# wrong, we won't complain, as this should be solved in the
 					# package file.
-					die $"Package dependency could not be resolved: %s (installed: %s)\n" \
+					die $"Package dependency cannot be resolved: %s (installed: %s)\n" \
 						"$dep_name_ver" "$(db_info_query "$pkgix_prefix" "$dep_name" "version" "None")"
 				fi
 
@@ -1724,7 +1729,7 @@ cmd_install() { #{{{
 
 	if [[ ! -d "${pkgix_prefix}" ]]; then
 		if ! mkdir -p "${pkgix_prefix}" 2> /dev/null; then
-			die $"Could not create directory '%s'!\n" "$pkgix_prefix"
+			die $"Cannot create directory '%s'!\n" "$pkgix_prefix"
 		fi
 
 		# dir exists now, normalize path just in case it contained `..`s
@@ -1777,7 +1782,7 @@ prefix_upgrade() { #{{{
 			source_prefix_rc "$pkgix_prefix"
 
 			if ! source_pkg "$pkg_name"; then
-				warning_printf $"Could not find package description file for '%s', skipping upgrade...\n" "$pkg_name"
+				warning_printf $"Cannot find package description file for '%s', skipping upgrade...\n" "$pkg_name"
 			elif [[ "${version:-}" != "$old_version" ]] || (( arg_reinstall )); then
 				if in_list "$pkg_name" "${PKGIX_UPGRADE_IGNORE[@]:+${PKGIX_UPGRADE_IGNORE[@]}}"; then
 					msg_printf "${Cylw}"$"Skipping upgrade""${Crst} %s (%s -> %s)\n" "$pkg_name" "$old_version" "${version:-}"
