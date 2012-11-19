@@ -22,6 +22,7 @@
 set -o errtrace
 set -o errexit
 set -o nounset
+shopt -s extglob
 
 #============================================================================
 # Constants
@@ -67,18 +68,28 @@ readonly RET_OK RET_ERR RET_INVALID_OPTION RET_USER_ABORT
 abspath() { #{{{
 	local path="$1"
 
-	if [[ -d "$path" ]]; then
-		( cd "$path" && pwd )
-	elif [[ -f "$path" ]]; then
-		echo "$( cd "${path%/*}" && pwd )/${path##*/}"
-	else
-		# Doesn't seem to exist, try best guess
-		if [[ "${path:0:1}" == "/" ]]; then
-			echo "${path}"
+	# If empty, do not do anything
+	if [[ -n "$path" ]]; then
+		local _path
+		# Remove trailing slashes
+		_path="${path%%+(/)}"
+		[[ -n "$_path" ]] && path="$_path" || :
+
+		if [[ -d "$path" ]]; then
+			path="$( cd "$path" && pwd )"
+		elif [[ -f "$path" ]]; then
+			path="$( cd "${path%/*}" && pwd )/${path##*/}"
 		else
-			echo "$(pwd)/${path}"
+			# Doesn't seem to exist, try best guess
+			if [[ "${path:0:1}" == "/" ]]; then
+				path="${path}"
+			else
+				path="$(pwd)/${path}"
+			fi
 		fi
 	fi
+
+	echo "$path"
 } #}}}
 
 #============================================================================
@@ -918,8 +929,9 @@ source_pkg() { #{{{
 # convenience. Enable inside the functions if neccessary.
 #
 # Makes the following extra variables available to package description file:
-#     prefix=pkgix_prefix
-#     destdir=install_dir
+#     prefix=$pkgix_prefix
+#     destdir=$install_dir
+#     dest_prefix=${destdir}${prefix}
 #
 # Otherwise potentially useful variables which are available from parent scope:
 #     old_version - if package is being upgraded (see prefix_upgrade)
@@ -963,7 +975,10 @@ sourced_pkg_call() { #{{{
 		# Optional Arguments, passed as globals
 		if [[ -n "${2:-}" ]]; then
 			prefix="$2"
-			[[ -n "${3:-}" ]] && destdir="$3"
+			if [[ -n "${3:-}" ]]; then
+				destdir="$3"
+				dest_prefix="${destdir}${prefix}"
+			fi
 		fi
 
 		(( ! arg_debug )) && set +o nounset || :
@@ -1515,9 +1530,10 @@ pkg_install() { #{{{
 		# Create the list of files to be installed
 		local staging_files_file="${build_dir}/.staging.files"
 		: > "$staging_files_file"
-		if [[ -d "${install_dir}/${pkgix_prefix}" ]]; then
+		local install_prefix="${install_dir}${pkgix_prefix}"
+		if [[ -d "${install_prefix}" ]]; then
 			# As prefix is $pkgix_prefix, the complete folder structure from / is maintained inside $install_dir
-			find_printbase "${install_dir}/${pkgix_prefix}" > "$staging_files_file"
+			find_printbase "${install_prefix}" > "$staging_files_file"
 		else
 			warning_printf $"Package did not install any files.\n"
 		fi
@@ -1530,8 +1546,8 @@ pkg_install() { #{{{
 		local backup_checksum_sha256
 		for backup_path in "${backup[@]:+${backup[@]}}"; do
 			# Only do checksum based backup with real files
-			if [[ -f "${install_dir}/${pkgix_prefix}/${backup_path}" ]]; then
-				backup_checksum_sha256=($(sha256checksum "${install_dir}/${pkgix_prefix}/${backup_path}"))
+			if [[ -f "${install_prefix}/${backup_path}" ]]; then
+				backup_checksum_sha256=($(sha256checksum "${install_prefix}/${backup_path}"))
 				backup_checksum_sha256="${backup_checksum_sha256[0]}"
 			else
 				backup_checksum_sha256=""
@@ -1553,7 +1569,7 @@ pkg_install() { #{{{
 					# Only if the file already exists in pkgix_prefix and in
 					# the backup list, should it be installed as a .pkgnew file.
 					if in_list "$path" "${backup[@]:+${backup[@]}}"; then
-						mv "${install_dir}/${pkgix_prefix}/${path}" "${install_dir}/${pkgix_prefix}/${path}.pkgnew"
+						mv "${install_prefix}/${path}" "${install_prefix}/${path}.pkgnew"
 						echo "${path}.pkgnew" >> "$pkgnew_files_file"
 						warning_printf $"Installing '%s' as '%s'\n" "$path" "${path}.pkgnew"
 						continue
@@ -1569,8 +1585,8 @@ pkg_install() { #{{{
 		msg_printf "${Cgrn}%s (%s)${Crst} "$"installing...\n" "$pkg_name" "${version:-}"
 
 		# Perform actual installation
-		if [[ -d "${install_dir}/${pkgix_prefix}" ]]; then
-			cp -a "${install_dir}/${pkgix_prefix}"/* "${pkgix_prefix}"
+		if [[ -d "${install_prefix}" ]]; then
+			cp -a "${install_prefix}"/* "${pkgix_prefix}"
 		fi
 
 		db_install "$pkgix_prefix" "$pkg_name" "$reason" \
