@@ -62,8 +62,21 @@ readonly RET_OK RET_ERR RET_INVALID_OPTION RET_USER_ABORT
 # abspath path
 # Get absolute path; normalizes the path if dir or file exists.
 #
-# Declared here, as it can then be used in defining default values for
-# configurable variables, or can even be used in the RC-file.
+# Declared here for use in defining default values for configurable variables,
+# or can even be used in the RC-file.
+#
+# *IMPORTANT* General note on paths: If a variable is used to construct a path,
+# usually by chaining `${a}/${b}/..`, if a slash is added after a variable,
+# then a trailing slash should be removed from the variable; this is so we do
+# not get paths with double-slashes if the user did not ask for them, as POSIX
+# defines double slashes at the root of a path to be interpreted implementation
+# specific -- do NOT break this!
+#   If a variable could potentially contain a trailing slash, construct paths
+# like so: ${a%/}/${b%/}/..
+#
+# The only known case where this is usually a problem, is if pkgix_prefix is '/'.
+# The rationale behind removing the trailing '/' only when constructing a path is
+# so that we do not set pkgix_prefix to the null string!
 #
 abspath() { #{{{
 	local path="$1"
@@ -71,7 +84,9 @@ abspath() { #{{{
 	# If empty, do not do anything
 	if [[ -n "$path" ]]; then
 		local _path
-		# Remove trailing slashes
+		# Remove trailing slashes; only remove trailing slashes, and do not
+		# turn '//' into '/', as according to POSIX, '//' could be interpreted
+		# in an implementation specific way.
 		_path="${path%%+(/)}"
 		[[ -n "$_path" ]] && path="$_path" || :
 
@@ -259,7 +274,7 @@ fi
 # log_printf pkgix_prefix args...
 #
 log_printf() { #{{{
-	local log_file="${1}/${LOG_FILE}"
+	local log_file="${1%/}/${LOG_FILE}"
 	shift
 	[[ ! -d "${log_file%/*}" ]] && mkdir -p "${log_file%/*}" || :
 	printf "[$(date)] ""$@" >> "$log_file"
@@ -473,7 +488,7 @@ fi
 __lock_held=""
 lock_prefix() { #{{{
 	local pkgix_prefix="$(abspath "$1")"
-	local lock_file="${pkgix_prefix}/${LOCK_FILE}"
+	local lock_file="${pkgix_prefix%/}/${LOCK_FILE}"
 	if [[ -f "$lock_file" ]]; then
 		error_printf $"%s exists!\n" "$lock_file"
 		return $RET_ERR
@@ -491,7 +506,7 @@ lock_prefix() { #{{{
 #
 unlock_prefix() { #{{{
 	local pkgix_prefix="$(abspath "$1")"
-	local lock_file="${pkgix_prefix}/${LOCK_FILE}"
+	local lock_file="${pkgix_prefix%/}/${LOCK_FILE}"
 	rm -f "$lock_file"
 	__lock_held=""
 } #}}}
@@ -690,8 +705,8 @@ __prefix_rc_sourced=0
 source_prefix_rc() { #{{{
 	(( __prefix_rc_sourced )) && return || :
 	local pkgix_prefix="$1"
-	[[ ! -r "${pkgix_prefix}/etc/${PROGNAME}rc" ]] && return || :
-	source "${pkgix_prefix}/etc/${PROGNAME}rc"
+	[[ ! -r "${pkgix_prefix%/}/etc/${PROGNAME}rc" ]] && return || :
+	source "${pkgix_prefix%/}/etc/${PROGNAME}rc"
 	__prefix_rc_sourced=1
 } #}}}
 
@@ -738,8 +753,10 @@ export_env() { #{{{
 	verbose_printf $"Exporting environment: %s\n" "$pkgix_prefix"
 
 	local base_path
+	local _base_path
 	local library_path
-	for base_path in "${pkgix_prefix}" "${pkgix_prefix}/usr"; do
+	for _base_path in "${pkgix_prefix}" "${pkgix_prefix%/}/usr"; do
+		base_path="${_base_path%/}"
 
 		library_path="${base_path}/lib"
 
@@ -769,7 +786,7 @@ export_env() { #{{{
 		# not exist yet, as a package might install its own library in a
 		# non-existent base-path and this needs to be encoded in the binaries;
 		# the other variables are only useful if the paths they refer to exist.
-		[[ ! -d "$base_path" ]] && continue || :
+		[[ ! -d "$_base_path" ]] && continue || :
 
 		# Prepending to PATH
 		export PATH="${base_path}/bin:${PATH:-}"
@@ -929,8 +946,8 @@ source_pkg() { #{{{
 # convenience. Enable inside the functions if neccessary.
 #
 # Makes the following extra variables available to package description file:
-#     prefix=$pkgix_prefix
-#     destdir=$install_dir
+#     prefix=${pkgix_prefix%/} -- if pkgix_prefix is '/' the prefix passed is empty!
+#     destdir=${install_dir}
 #     dest_prefix=${destdir}${prefix}
 #
 # Otherwise potentially useful variables which are available from parent scope:
@@ -974,7 +991,7 @@ sourced_pkg_call() { #{{{
 	(
 		# Optional Arguments, passed as globals
 		if [[ -n "${2:-}" ]]; then
-			prefix="$2"
+			prefix="${2%/}"
 			if [[ -n "${3:-}" ]]; then
 				destdir="$3"
 				dest_prefix="${destdir}${prefix}"
@@ -1057,7 +1074,7 @@ db_isinstalled() { #{{{
 	local pkgix_prefix="$1"
 	local pkg_name="$2"
 	local cmp_version="${3:-}"
-	local db_prefix_pkg="${pkgix_prefix}/${DB_PREFIX}/${pkg_name}"
+	local db_prefix_pkg="${pkgix_prefix%/}/${DB_PREFIX}/${pkg_name}"
 
 	if (( arg_dry_run )) && dry_db_isinstalled "$pkgix_prefix" "$pkg_name"; then
 		# Check new dry installed packages first, then check actually installed packages.
@@ -1095,7 +1112,7 @@ db_isinstalled() { #{{{
 set_db_vars() { #{{{
 	local pkgix_prefix="$1"
 	local pkg_name="$2"
-	db_prefix="${pkgix_prefix}/${DB_PREFIX}"
+	db_prefix="${pkgix_prefix%/}/${DB_PREFIX}"
 	db_prefix_pkg="${db_prefix}/${pkg_name}"
 	db_files_file="${db_prefix_pkg}/files"
 	db_backup_file="${db_prefix_pkg}/files.backup"
@@ -1288,7 +1305,7 @@ db_info_query() { #{{{
 db_list_installed() { #{{{
 	local pkgix_prefix="$1"
 	local from_backup="${2:-0}"
-	local db_file="${pkgix_prefix}/${DB_PREFIX}.db"
+	local db_file="${pkgix_prefix%/}/${DB_PREFIX}.db"
 
 	if [[ -f "$db_file" ]]; then
 		if (( from_backup )); then
@@ -1320,19 +1337,19 @@ else
 	__dry_db_dir="/tmp/.${PROGNAME}-dry-db"
 fi
 dry_db_install() {
-	local dry_db_dir="${__dry_db_dir}/${1}/${2}"
+	local dry_db_dir="${__dry_db_dir}/${1%/}/${2}"
 	local reason="$3"
 	mkdir -p "$dry_db_dir"
 	echo "${version:-}" > "${dry_db_dir}/version"
 	echo "$reason" > "${dry_db_dir}/reason"
 }
 dry_db_isinstalled() {
-	[[ -d "${__dry_db_dir}/${1}/${2}" ]]
+	[[ -d "${__dry_db_dir}/${1%/}/${2}" ]]
 }
 dry_db_info_query() {
 	case "$3" in
-		version) echo "$(<"${__dry_db_dir}/${1}/${2}/version")" ;;
-		reason) echo "$(<"${__dry_db_dir}/${1}/${2}/reason")" ;;
+		version) echo "$(<"${__dry_db_dir}/${1%/}/${2}/version")" ;;
+		reason) echo "$(<"${__dry_db_dir}/${1%/}/${2}/reason")" ;;
 		*) die ;;
 	esac
 }
@@ -1492,8 +1509,8 @@ pkg_install() { #{{{
 			build_dir="${PKGIX_BUILD_DIR}/${PROGNAME}-build"
 			install_dir="${PKGIX_BUILD_DIR}/${PROGNAME}-install"
 		else
-			build_dir="${pkgix_prefix}/.${PROGNAME}-build"
-			install_dir="${pkgix_prefix}/.${PROGNAME}-install"
+			build_dir="${pkgix_prefix%/}/.${PROGNAME}-build"
+			install_dir="${pkgix_prefix%/}/.${PROGNAME}-install"
 		fi
 
 		mkdir -p "$build_dir"
@@ -1546,8 +1563,8 @@ pkg_install() { #{{{
 		local backup_checksum_sha256
 		for backup_path in "${backup[@]:+${backup[@]}}"; do
 			# Only do checksum based backup with real files
-			if [[ -f "${install_prefix}/${backup_path}" ]]; then
-				backup_checksum_sha256=($(sha256checksum "${install_prefix}/${backup_path}"))
+			if [[ -f "${install_prefix%/}/${backup_path}" ]]; then
+				backup_checksum_sha256=($(sha256checksum "${install_prefix%/}/${backup_path}"))
 				backup_checksum_sha256="${backup_checksum_sha256[0]}"
 			else
 				backup_checksum_sha256=""
@@ -1563,13 +1580,13 @@ pkg_install() { #{{{
 			msg_printf "${Cgrn}%s (%s)${Crst} "$"checking for file conflicts...\n" "$pkg_name" "${version:-}"
 
 			while read path; do
-				if [[ ! -d "${pkgix_prefix}/${path}" && -e "${pkgix_prefix}/${path}" ]]; then
+				if [[ ! -d "${pkgix_prefix%/}/${path}" && -e "${pkgix_prefix%/}/${path}" ]]; then
 					in_list "$path" "${forceinstall[@]:+${forceinstall[@]}}" && continue || :
 
 					# Only if the file already exists in pkgix_prefix and in
 					# the backup list, should it be installed as a .pkgnew file.
 					if in_list "$path" "${backup[@]:+${backup[@]}}"; then
-						mv "${install_prefix}/${path}" "${install_prefix}/${path}.pkgnew"
+						mv "${install_prefix%/}/${path}" "${install_prefix%/}/${path}.pkgnew"
 						echo "${path}.pkgnew" >> "$pkgnew_files_file"
 						warning_printf $"Installing '%s' as '%s'\n" "$path" "${path}.pkgnew"
 						continue
@@ -1586,7 +1603,7 @@ pkg_install() { #{{{
 
 		# Perform actual installation
 		if [[ -d "${install_prefix}" ]]; then
-			cp -a "${install_prefix}"/* "${pkgix_prefix}"
+			cp -a "${install_prefix%/}"/* "${pkgix_prefix}"
 		fi
 
 		db_install "$pkgix_prefix" "$pkg_name" "$reason" \
@@ -1643,8 +1660,8 @@ pkg_remove() { #{{{
 		backup_checksum_sha256="${backup_path##*:}"
 		backup_path="${backup_path%:*}"
 
-		if [[ -f "${pkgix_prefix}/${backup_path}" ]]; then
-			backup_checksum_sha256_f=($(sha256checksum "${pkgix_prefix}/${backup_path}"))
+		if [[ -f "${pkgix_prefix%/}/${backup_path}" ]]; then
+			backup_checksum_sha256_f=($(sha256checksum "${pkgix_prefix%/}/${backup_path}"))
 			backup_checksum_sha256_f="${backup_checksum_sha256_f[0]}"
 
 			# If file changed, exclude from deletion
@@ -1660,8 +1677,8 @@ pkg_remove() { #{{{
 	while read filename; do
 		# (1) First pass delete files and get directory depths
 
-		if [[ ! -d "${pkgix_prefix}/$filename" ]]; then
-			rm -f "${pkgix_prefix}/$filename"
+		if [[ ! -d "${pkgix_prefix%/}/${filename}" ]]; then
+			rm -f "${pkgix_prefix%/}/${filename}"
 		else
 			# Get path depth for sorting: If we don't do this, directories
 			# which are higher up in the hierarchy are being tried to be
@@ -1672,10 +1689,10 @@ pkg_remove() { #{{{
 			echo "${#tmp[@]}:${filename}"
 		fi
 	done | sort -rn |
-	while read filename; do
+	while read dirname; do
 		# (2) Then check for empty directories and delete if empty
-		local filename="${filename#*:}"
-		remove_empty_dirs "${pkgix_prefix}/$filename" 0
+		dirname="${dirname#*:}"
+		remove_empty_dirs "${pkgix_prefix%/}/${dirname}" 0
 	done
 
 	# Remove meta files
@@ -1734,7 +1751,7 @@ prefix_upgrade() { #{{{
 	local pkgix_prefix="$(abspath "$1")"
 	shift
 
-	if [[ ! -f "${pkgix_prefix}/${DB_PREFIX}.db" ]]; then
+	if [[ ! -f "${pkgix_prefix%/}/${DB_PREFIX}.db" ]]; then
 		warning_printf $"'%s' is not a valid prefix!\n" "$pkgix_prefix"
 		return $RET_INVALID_OPTION
 	fi
@@ -2002,7 +2019,7 @@ cmd_show() { #{{{
 					(( ! arg_quiet )) && prefix_line="$pkg_name " || :
 					local path
 					while read path; do
-						[[ -n "$path" ]] && echo "${prefix_line}${pkgix_prefix}/${path}" || :
+						[[ -n "$path" ]] && echo "${prefix_line}${pkgix_prefix%/}/${path}" || :
 					done < "$db_files_file"
 				else
 					source "$db_info_file"
@@ -2066,7 +2083,7 @@ sanitize_repos() { #{{{
 	local repo
 	for repo in "${old_repos[@]:+${old_repos[@]}}"; do
 		[[ "$repo" =~ ^file:// ]] && repo="${repo##file://}"
-		repo=${repo%%/}
+		repo=${repo%/}
 
 		pkgix_repos+=("${repo}")
 	done
