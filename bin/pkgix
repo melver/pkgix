@@ -73,8 +73,8 @@ abspath() { #{{{
 		echo "$( cd "${path%/*}" && pwd )/${path##*/}"
 	else
 		# Doesn't seem to exist, try best guess
-		if [[ "$path" =~ ^/ ]]; then
-			echo "$path"
+		if [[ "${path:0:1}" == "/" ]]; then
+			echo "${path}"
 		else
 			echo "$(pwd)/${path}"
 		fi
@@ -718,10 +718,8 @@ export_env() { #{{{
 		# installing takes the first prefix.
 		export PKGIX_PREFIX="$pkgix_prefix"
 	else
-		# Check if this has already been exported Also check CPATH, as I don't
-		# expect a user to have set it for a prefix.
-		[[ "$PKGIX_PREFIX" =~ ^(.*:)?"${pkgix_prefix}"(:.*)?$ &&
-			"${CPATH:-}" =~ ^(.*:)?"${pkgix_prefix}"/include(:.*)?$ ]] && return $RET_OK
+		# Check if this prefix has already been exported.
+		[[ "$PKGIX_PREFIX" =~ ^(.*:)?"${pkgix_prefix}"(:.*)?$ ]] && return $RET_OK
 
 		export PKGIX_PREFIX="$PKGIX_PREFIX:${pkgix_prefix}"
 	fi
