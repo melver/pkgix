@@ -27,7 +27,7 @@ shopt -s extglob
 #============================================================================
 # Constants
 #
-PROG_VERSION="0.5.0-rc1"
+PROG_VERSION="0.5.0-rc2"
 PROGNAME="pkgix"
 DB_PREFIX="var/lib/${PROGNAME}/local"
 LOG_FILE="var/log/${PROGNAME}.log"
