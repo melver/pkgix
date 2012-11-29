@@ -1002,6 +1002,7 @@ unset_sourced_pkg() { #{{{
 	unset iscompat
 	unset isinstalled
 	unset build
+	unset check
 	unset installenv
 	unset postinstall
 	unset forceinstall
@@ -1510,6 +1511,18 @@ pkg_install() { #{{{
 
 		if ! sourced_pkg_call build "$pkgix_prefix" "$install_dir"; then
 			die $"Building '%s' failed! Aborting.\n" "$pkg_name"
+		fi
+
+		# Run check if available
+		if type -p check > /dev/null; then
+			msg_printf "${Cgrn}%s (%s)${Crst} "$"running check...\n" "$pkg_name" "${version:-}"
+			if ! sourced_pkg_call check "$pkgix_prefix" "$install_dir"; then
+				if (( ! arg_ignore_check )); then
+					die $"'%s' failed check!\n" "$pkg_name"
+				else
+					warning_printf $"Running check failed, '%s' might not work as expected!\n" "$pkg_name"
+				fi
+			fi
 		fi
 
 		msg_printf "${Cgrn}%s (%s)${Crst} "$"installing into staging area...\n" "$pkg_name" "${version:-}"
@@ -2173,7 +2186,7 @@ prog_usage() { #{{{
 			install|upgrade)
 				printf -- $"Usage: %s %s [-f|--force] [-d|--nodeps] [-r|--reinstall]\n\
                      [-k|--keep-build-dir] [--ignore-checksums]\n\
-                     [--asdeps] [--asexplicit]\n" "$PROGNAME" "$help_cmd"
+                     [--ignore-check] [--asdeps] [--asexplicit]\n" "$PROGNAME" "$help_cmd"
 
 				if [[ "$help_cmd" == "install" ]]; then
 					printf -- $"                     <prefix> <pkgs>...\n"
@@ -2206,6 +2219,9 @@ prog_usage() { #{{{
 				printf -- $"\
     --ignore-checksums\n\
         Ignores checksums for remotely fetched files.\n"
+				printf -- $"\
+    --ignore-check\n\
+        Ignores the result of the package check; installs even if check failed.\n"
 				printf -- $"\
     --asdeps\n\
         Set reason for all selected packages to installed as a dependency.\n"
@@ -2426,6 +2442,7 @@ case "$cmd" in
 		arg_reinstall=0
 		arg_keep_build_dir=0
 		arg_ignore_checksums=0
+		arg_ignore_check=0
 		arg_reason_dependency=0
 		arg_reason_explicit=0
 
@@ -2437,6 +2454,7 @@ case "$cmd" in
 				-k|--keep-build-dir) arg_keep_build_dir=1 ;;
 				-D|--dry) arg_dry_run=1 ;;
 				--ignore-checksums) arg_ignore_checksums=1 ;;
+				--ignore-check) arg_ignore_check=1 ;;
 				--asdeps) arg_reason_dependency=1 ;;
 				--asexplicit) arg_reason_explicit=1 ;;
 				--) shift; break ;;
