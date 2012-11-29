@@ -321,39 +321,49 @@ resolv_dir_symlink() { #{{{
 # {{{
 
 #----------------------------------------------------------------------------
-# *checksum [file_name]
+# digest type [file_name]
 # If file_name is "-" or not provided, read from stdin.
 #
-if type -p sha256sum > /dev/null; then
-	sha256checksum() {
-		sha256sum "${1:--}"
-	}
-elif type -p sha256 > /dev/null; then
-	sha256checksum() {
-		if [[ "${1:--}" == "-" ]]; then
-			sha256
-		else
-			sha256 < "$1"
-		fi
+if type -p openssl > /dev/null; then
+	digest() {
+		local result
+		case "$1" in
+			md5|sha1|sha224|sha256|sha384|sha512|whirlpool)
+				if [[ "${2:--}" == "-" ]]; then
+					result="$(openssl dgst -${1})"
+				else
+					result="$(openssl dgst -${1} "$2")"
+				fi
+				echo "${result##* }"
+				;;
+			*)
+				die $"Digest '%s' not supported!\n" "$1"
+				;;
+		esac
 	}
 else
-	die $"No suitable SHA-256 command found!\n"
-fi
+	if type -p sha256sum > /dev/null; then
+		digest() {
+			[[ "$1" != "sha256" ]] && die || :
+			local result="$(sha256sum "${2:--}")"
+			echo "${result%% *}"
+		}
+	elif type -p sha256 > /dev/null; then
+		digest() {
+			[[ "$1" != "sha256" ]] && die || :
+			local result
+			if [[ "${2:--}" == "-" ]]; then
+				result="$(sha256)"
+			else
+				result="$(sha256 < "$2")"
+			fi
+			echo "${result%% *}"
+		}
+	else
+		die $"No suitable SHA-256 binary nor '%s' found!\n" "openssl"
+	fi
 
-if type -p md5sum > /dev/null; then
-	md5checksum() {
-		md5sum "${1:--}"
-	}
-elif type -p md5 > /dev/null; then
-	md5checksum() {
-		if [[ "${1:--}" == "-" ]]; then
-			md5
-		else
-			md5 < "$1"
-		fi
-	}
-else
-	warning_printf $"No suitable MD5 command found; MD5 checksums not supported.\n"
+	warning_printf $"Cannot find '%s', only SHA-256 checksums are supported.\n" "openssl"
 fi
 
 case "$(uname -s)" in
@@ -541,28 +551,22 @@ fetch_remote() { #{{{
 #============================================================================
 # verify_checksum checksum file_name
 #
-# checksum can be prefixed by <checksum-type>= to denote the checksum type.
-# Supported types are: sha256 (default), md5
+# checksum can be prefixed by <digest-type>= to denote the digest type.
+# The default digest-type is sha256, if not specified.
 #
 verify_checksum() { #{{{
 	local checksum="$1"
 	local file_name="$2"
+	local digest_type
 	local file_checksum
-	local checksum_fn
 
-	case "$checksum" in
-		md5=*)
-			checksum="${checksum##md5=}"
-			checksum_fn="md5checksum"
-			;;
-		*) # Default is sha256
-			checksum="${checksum##sha256=}"
-			checksum_fn="sha256checksum"
-			;;
-	esac
+	if [[ "$checksum" =~ "=" ]]; then
+		IFS="=" read -r digest_type checksum <<< "$checksum"
+	else
+		digest_type="sha256"
+	fi
 
-	file_checksum=($($checksum_fn "$file_name"))
-	file_checksum="${file_checksum[0]}"
+	file_checksum="$(digest "$digest_type" "$file_name")"
 
 	if [[ -n "$checksum" ]]; then
 		if (( ! arg_ignore_checksums )); then
@@ -885,8 +889,8 @@ source_pkg() { #{{{
 
 		case "$pkg_file" in
 			http://*|https://*|ftp://*)
-				local repo_hash=($(sha256checksum <<< "$repo"))
-				local local_pkg_file="${__repo_cache_dir}/${repo_hash[0]}/${pkg_name}"
+				local repo_hash="$(digest sha256 <<< "$repo")"
+				local local_pkg_file="${__repo_cache_dir}/${repo_hash}/${pkg_name}"
 				[[ ! -d "${local_pkg_file%/*}" ]] && mkdir -p "${local_pkg_file%/*}" || :
 
 				verbose_printf $"Trying: %s\n" "$pkg_file"
@@ -1555,17 +1559,16 @@ pkg_install() { #{{{
 		local staging_backup_file="${build_dir}/.staging.files.backup"
 		: > "$staging_backup_file"
 		local backup_path
-		local backup_checksum_sha256
+		local backup_checksum
 		for backup_path in "${backup[@]:+${backup[@]}}"; do
 			# Only do checksum based backup with real files
 			if [[ -f "${install_prefix%/}/${backup_path}" ]]; then
-				backup_checksum_sha256=($(sha256checksum "${install_prefix%/}/${backup_path}"))
-				backup_checksum_sha256="${backup_checksum_sha256[0]}"
+				backup_checksum="$(digest sha256 "${install_prefix%/}/${backup_path}")"
 			else
-				backup_checksum_sha256=""
+				backup_checksum=""
 			fi
 
-			echo "${backup_path}:${backup_checksum_sha256}" >> "$staging_backup_file"
+			echo "${backup_path}:${backup_checksum}" >> "$staging_backup_file"
 		done
 
 		# Check for file conflicts before copying from install_dir to pkgix_prefix
@@ -1648,19 +1651,18 @@ pkg_remove() { #{{{
 	msg_printf "${Cgrn}%s (%s)${Crst} "$"removing...\n" "$pkg_name" "$version"
 
 	local backup_path
-	local backup_checksum_sha256
-	local backup_checksum_sha256_f
+	local backup_checksum
+	local backup_checksum_f
 	while IFS= read -r backup_path; do
 		# (0) Check for changed files which require backup
-		backup_checksum_sha256="${backup_path##*:}"
+		backup_checksum="${backup_path##*:}"
 		backup_path="${backup_path%:*}"
 
 		if [[ -f "${pkgix_prefix%/}/${backup_path}" ]]; then
-			backup_checksum_sha256_f=($(sha256checksum "${pkgix_prefix%/}/${backup_path}"))
-			backup_checksum_sha256_f="${backup_checksum_sha256_f[0]}"
+			backup_checksum_f="$(digest sha256 "${pkgix_prefix%/}/${backup_path}")"
 
 			# If file changed, exclude from deletion
-			if [[ "$backup_checksum_sha256" != "$backup_checksum_sha256_f" ]]; then
+			if [[ "$backup_checksum" != "$backup_checksum_f" ]]; then
 				verbose_printf $"Keeping modified '%s'\n" "$backup_path"
 				echo "^${backup_path}$"
 			fi
