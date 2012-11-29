@@ -1217,8 +1217,8 @@ db_install() { #{{{
 	[[ -z "${website:-}" ]] && warning_printf $"Empty 'website' field in package description file of '%s'!\n" "$pkg_name"
 
 	local db_file="${db_prefix}.db"
-	if [[ -f "$db_file" ]] && grep -q "^.|${pkg_name}$" "$db_file"; then
-		sed -i "s:^.|${pkg_name}$:i|${pkg_name}:" "$db_file"
+	if [[ -f "$db_file" ]] && grep -q "^.|${pkg_name//./\\.}\$" "$db_file"; then
+		sed -i "s:^.|${pkg_name//./\\.}\$:i|${pkg_name}:" "$db_file"
 	else
 		echo "i|$pkg_name" >> "$db_file"
 	fi
@@ -1664,13 +1664,13 @@ pkg_remove() { #{{{
 			# If file changed, exclude from deletion
 			if [[ "$backup_checksum" != "$backup_checksum_f" ]]; then
 				verbose_printf $"Keeping modified '%s'\n" "$backup_path"
-				echo "^${backup_path}$"
+				echo "${backup_path}"
 			fi
 		else
 			# Exclude by default
-			echo "^${backup_path}$"
+			echo "${backup_path}"
 		fi
-	done < "$db_backup_file" | grep -v -f - "$db_files_file" |
+	done < "$db_backup_file" | grep -Fxvf - "$db_files_file" |
 	while IFS= read -r filename; do
 		# (1) First pass delete files and get directory depths
 
@@ -1700,7 +1700,7 @@ pkg_remove() { #{{{
 	remove_empty_dirs "${db_prefix}"
 
 	# Set package as removed
-	sed -i "s:^.|${pkg_name}$:r|${pkg_name}:" "${db_prefix}.db"
+	sed -i "s:^.|${pkg_name//./\\.}\$:r|${pkg_name}:" "${db_prefix}.db"
 
 	msg_printf "${CgrnB}%s (%s)${Crst} "$"successfully removed.\n" "$pkg_name" "$version"
 	log_printf "$pkgix_prefix" "%s (%s) "$"removed\n" "$pkg_name" "$version"
