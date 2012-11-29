@@ -296,28 +296,6 @@ in_list() { #{{{
 } #}}}
 
 #============================================================================
-# IFS_expand to_var from_var [set_IFS]
-# Generates code to expands an IFS separated string into an array.
-# Use eval "$(IFS_expand ..)"; without eval, it would not be possible to set
-# or read from scoped variables, such as function-local ones. I know, eval is
-# not desireable, but in this case am very certain that it won't lead to any of
-# its dreaded ill-effects (arbitrary code-injection): all 3 parameters must be
-# hard-coded strings in the place this function is called.
-#
-IFS_expand() { #{{{
-	local to_var="$1"
-	local from_var="$2"
-	local set_IFS="${3:-$IFS}"
-
-	printf -- '__o_IFS="$IFS" ;
-IFS="%s" ;
-%s=(${%s[@]}) ;
-IFS="$__o_IFS" ;
-unset __o_IFS ;
-' "$set_IFS" "$to_var" "$from_var"
-} #}}}
-
-#============================================================================
 # resolv_dir_symlink
 # Resolves directory symlinks only; we can use the bash builtin pwd with the
 # -P option for this, instead of using external tools such as readlink or
@@ -450,7 +428,7 @@ else
 		(
 			declare -A pkgs_visited=()
 			local pkg_name
-			while read pkg_name; do
+			while IFS= read -r pkg_name; do
 				__dep_topo_sort_visit "$pkgix_prefix" "$pkg_name"
 			done
 		)
@@ -671,7 +649,7 @@ remove_invalid_symlinks() { #{{{
 	[[ -z "$depth" ]] && find_args=() || find_args=("-maxdepth" "$depth")
 
 	find "$path" "${find_args[@]:+${find_args[@]}}" -type l |
-	while read lpath; do
+	while IFS= read -r lpath; do
 		[[ ! -e "$lpath" ]] && rm "$lpath" || :
 	done
 } #}}}
@@ -687,7 +665,7 @@ prompt_continue() { #{{{
 	local answer
 
 	printf "${CbluB}"$"Continue ?"" [Y/n] ${Crst}"
-	read answer
+	read -r answer
 
 	if [[ ! "$answer" =~ ^[yY]|^$ ]]; then
 		verbose_printf $"User aborted.\n"
@@ -1318,9 +1296,8 @@ db_list_installed() { #{{{
 			db_file="${db_file}.bak"
 		fi
 
-		local pkg_name
 		grep "^i|" "$db_file" |
-		while read pkg_name; do
+		while IFS= read -r pkg_name; do
 			pkg_name="${pkg_name##i|}"
 			if ! db_isinstalled "$pkgix_prefix" "$pkg_name"; then
 				warning_printf $"Inconsistent database entry: %s\n" "$pkg_name"
@@ -1584,7 +1561,7 @@ pkg_install() { #{{{
 		if (( ! arg_force )); then
 			msg_printf "${Cgrn}%s (%s)${Crst} "$"checking for file conflicts...\n" "$pkg_name" "${version:-}"
 
-			while read path; do
+			while IFS= read -r path; do
 				if [[ ! -d "${pkgix_prefix%/}/${path}" && -e "${pkgix_prefix%/}/${path}" ]]; then
 					in_list "$path" "${forceinstall[@]:+${forceinstall[@]}}" && continue || :
 
@@ -1660,7 +1637,7 @@ pkg_remove() { #{{{
 	local backup_path
 	local backup_checksum_sha256
 	local backup_checksum_sha256_f
-	while read backup_path; do
+	while IFS= read -r backup_path; do
 		# (0) Check for changed files which require backup
 		backup_checksum_sha256="${backup_path##*:}"
 		backup_path="${backup_path%:*}"
@@ -1679,7 +1656,7 @@ pkg_remove() { #{{{
 			echo "^${backup_path}$"
 		fi
 	done < "$db_backup_file" | grep -v -f - "$db_files_file" |
-	while read filename; do
+	while IFS= read -r filename; do
 		# (1) First pass delete files and get directory depths
 
 		if [[ ! -d "${pkgix_prefix%/}/${filename}" ]]; then
@@ -1690,11 +1667,11 @@ pkg_remove() { #{{{
 			# deleted before its subdirectories, which could be empty, but
 			# because the subdirectories still exist, the parent won't be
 			# deleted.
-			eval "$(IFS_expand tmp filename "/")"
+			IFS="/" read -ra tmp <<< "$filename"
 			echo "${#tmp[@]}:${filename}"
 		fi
 	done | sort -rn |
-	while read dirname; do
+	while IFS= read -r dirname; do
 		# (2) Then check for empty directories and delete if empty
 		dirname="${dirname#*:}"
 		remove_empty_dirs "${pkgix_prefix%/}/${dirname}" 0
@@ -1768,7 +1745,7 @@ prefix_upgrade() { #{{{
 
 	db_list_installed "$pkgix_prefix" 1 |
 	dep_topo_sort "$pkgix_prefix" |
-	while read pkg_name; do
+	while IFS= read -r pkg_name; do
 		# If package list provided, filter by that list
 		if (( $# > 0 )); then
 			in_list "$pkg_name" "$@" || continue
@@ -1867,7 +1844,7 @@ cmd_avail() { #{{{
 							warning_printf $"Fetching '%s' failed!\n" "${repo}/$REMOTE_AVAIL_FILE"
 						fi
 					) |
-					while read pkg_short_info; do
+					while IFS= read -r pkg_short_info; do
 						if (( arg_quiet )); then
 							echo "$repo ${pkg_short_info%% *}"
 						else
@@ -1879,7 +1856,7 @@ cmd_avail() { #{{{
 					# Do not show hidden files and do not descend into hidden folders.
 					# Need trailing slash, in case the repo is the path to a symlink.
 					find_printbase "${repo}/" ! \( -name ".*" -prune \) -a \( -type f \) 2> /dev/null | sort |
-					while read pkg_name; do
+					while IFS= read -r pkg_name; do
 						if (( arg_quiet )); then
 							echo "$repo $pkg_name"
 						else
@@ -1933,7 +1910,7 @@ cmd_list() { #{{{
 		(( ! arg_quiet )) && printf "%b" "${CbluB}-> ${CgrnB}${pkgix_prefix}${Crst}\n" 1>&2 || :
 
 		db_list_installed "$pkgix_prefix" | sort |
-		while read pkg_name; do
+		while IFS= read -r pkg_name; do
 			(
 				set_db_vars "$pkgix_prefix" "$pkg_name" || :
 
@@ -1958,7 +1935,7 @@ cmd_list() { #{{{
 						for _pkgix_prefix in "$@"; do
 							[[ -d "$_pkgix_prefix" ]] || continue && _pkgix_prefix="$(abspath "$_pkgix_prefix")"
 							db_list_installed "$_pkgix_prefix" |
-							while read _pkg_name; do
+							while IFS= read -r _pkg_name; do
 								set_db_vars "$_pkgix_prefix" "$_pkg_name" || :
 
 								# Tried using grep here, but the BASH-only
@@ -2023,7 +2000,7 @@ cmd_show() { #{{{
 					local prefix_line=""
 					(( ! arg_quiet )) && prefix_line="$pkg_name " || :
 					local path
-					while read path; do
+					while IFS= read -r path; do
 						[[ -n "$path" ]] && echo "${prefix_line}${pkgix_prefix%/}/${path}" || :
 					done < "$db_files_file"
 				else
@@ -2075,12 +2052,12 @@ cmd_chenv() { #{{{
 # Turn PKGIX_REPOS into pkgix_repos array; sanitize URLs.
 #
 sanitize_repos() { #{{{
-	local old_repos
+	local -a old_repos
 	# Check if it is already an array (user set in RC-file)
 	if [[ "$(declare -p PKGIX_REPOS)" =~ ^"declare -a" ]]; then
 		old_repos=("${PKGIX_REPOS[@]:+${PKGIX_REPOS[@]}}")
 	else
-		eval "$(IFS_expand old_repos PKGIX_REPOS "$URL_SEP")"
+		IFS="$URL_SEP" read -ra old_repos <<< "$PKGIX_REPOS"
 	fi
 
 	pkgix_repos=()
@@ -2351,8 +2328,8 @@ run_cmd() { #{{{
 
 				cmd_$cmd "$@"
 			else
-				local args_prefix
-				eval "$(IFS_expand args_prefix PKGIX_PREFIX ":")"
+				local -a args_prefix
+				IFS=":" read -ra args_prefix <<< "$PKGIX_PREFIX"
 
 				case "$cmd" in
 					show|upgrade) cmd_$cmd "${args_prefix[@]}" -- "$@" ;;
