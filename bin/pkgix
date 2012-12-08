@@ -1009,6 +1009,7 @@ unset_sourced_pkg() { #{{{
 	unset check
 	unset installenv
 	unset postinstall
+	unset postremove
 	unset forceinstall
 	unset backup
 } #}}}
@@ -1106,6 +1107,7 @@ set_db_vars() { #{{{
 	db_backup_file="${db_prefix_pkg}/files.backup"
 	db_version_file="${db_prefix_pkg}/version"
 	db_info_file="${db_prefix_pkg}/info"
+	db_hooks_file="${db_prefix_pkg}/hooks"
 
 	# Check if valid symlink to db dir (provides target)
 	if [[ -L "$db_prefix_pkg" && -d "$db_prefix_pkg" ]]; then
@@ -1132,6 +1134,7 @@ unset_db_vars() { #{{{
 	unset db_backup_file
 	unset db_version_file
 	unset db_info_file
+	unset db_hooks_file
 	unset real_pkg_name
 } #}}}
 
@@ -1211,6 +1214,14 @@ db_install() { #{{{
 
 		echo "reason=\"${reason}\""
 	} > "$db_info_file"
+
+	# Store *remove functions in hooks file; note that only the functions are
+	# written, and no other variables/functions are saved, which means that the
+	# *remove functions should not make use of any other variables/functions in
+	# the package description file!
+	{
+		type -p postremove > /dev/null && declare -f postremove || :
+	} > "$db_hooks_file"
 
 	[[ -z "${description:-}" ]] && warning_printf $"Empty 'description' field in package description file of '%s'!\n" "$pkg_name"
 	[[ -z "${license[*]:+${license[*]}}" ]] && warning_printf $"Empty 'license' field in package description file of '%s'!\n" "$pkg_name"
@@ -1411,7 +1422,7 @@ pkg_install() { #{{{
 			[[ -z "${metapkg:-}" ]] && break
 
 			# Is metapackage, check if satisfied
-			if (( ! is_reinstall )) && sourced_pkg_call satisfied; then
+			if (( ! is_reinstall )) && sourced_pkg_call satisfied "$pkgix_prefix"; then
 				if (( ! arg_reinstall )) || [[ "$reason" != "$REASON_EXPLICIT" ]] \
 					|| [[ "$metapkg" == "$METAPKG_DUMMY" ]]; then
 					msg_printf $"Metapackage '%s' satisfied.\n" "$next_pkg_name"
@@ -1433,7 +1444,7 @@ pkg_install() { #{{{
 			next_pkg_name="$metapkg"
 		done
 
-		if (( ! is_reinstall )) && sourced_pkg_call isinstalled; then
+		if (( ! is_reinstall )) && sourced_pkg_call isinstalled "$pkgix_prefix"; then
 			if (( ! arg_reinstall )) || [[ "$reason" != "$REASON_EXPLICIT" ]]; then
 				msg_printf $"'%s' already available outside of '%s', skipping...\n" "$pkg_name" "$pkgix_prefix"
 				exit $EXIT_OK
@@ -1612,11 +1623,11 @@ pkg_install() { #{{{
 		(( ! arg_keep_build_dir )) && rm -rf "$build_dir"
 		rm -rf "$install_dir"
 
-		# Run postinstall if available
+		# Run *install hooks
 		if type -p postinstall > /dev/null; then
-			msg_printf "${Cgrn}%s (%s)${Crst} "$"post-install...\n" "$pkg_name" "${version:-}"
+			msg_printf "${Cgrn}%s (%s)${Crst} "$"post-install hook...\n" "$pkg_name" "${version:-}"
 			if ! sourced_pkg_call postinstall "$pkgix_prefix"; then
-				warning_printf $"Post-installation step failed!\n"
+				warning_printf $"Post-install hook failed!\n"
 			fi
 		fi
 
@@ -1691,6 +1702,19 @@ pkg_remove() { #{{{
 		dirname="${dirname#*:}"
 		remove_empty_dirs "${pkgix_prefix%/}/${dirname}" 0
 	done
+
+	if [[ -f "$db_hooks_file" ]]; then
+		(
+			source "$db_hooks_file"
+
+			if type -p postremove > /dev/null; then
+				msg_printf "${Cgrn}%s (%s)${Crst} "$"post-remove hook...\n" "$pkg_name" "$version"
+				if ! sourced_pkg_call postremove "$pkgix_prefix"; then
+					warning_printf $"Post-remove hook failed!\n"
+				fi
+			fi
+		)
+	fi
 
 	# Remove meta files
 	rm -rf "${db_prefix_pkg}"
