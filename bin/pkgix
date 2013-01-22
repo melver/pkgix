@@ -3,7 +3,7 @@
 #
 # pkgix: Prefix environment and simple package management tool.
 #
-# Copyright (C) 2012, Marco Elver <me@marcoelver.com>
+# Copyright (C) 2012-2013, Marco Elver <me@marcoelver.com>
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -2153,7 +2153,7 @@ reset_traps() { #{{{
 prog_version() { #{{{
 	echo "$PROGNAME $PROG_VERSION"
 	echo
-	echo "Copyright (C) 2012, Marco Elver <me@marcoelver.com>"
+	echo "Copyright (C) 2012-2013, Marco Elver <me@marcoelver.com>"
 	echo
 	echo "This is free software; see the source for copying conditions."
 	echo "There is NO WARRANTY, to the extent permitted by law."
