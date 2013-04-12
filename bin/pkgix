@@ -571,7 +571,8 @@ verify_checksum() { #{{{
 	if [[ -n "$checksum" ]]; then
 		if (( ! arg_ignore_checksums )); then
 			if [[ "$file_checksum" != "$checksum" ]]; then
-				die $"Checksum of '%s' [%s] does not match [%s]!\n" "$file_name" "$file_checksum" "$checksum"
+				die $"Checksum (%s) of '%s' [%s] does not match [%s]!\n" \
+					"$digest_type" "$file_name" "$file_checksum" "$checksum"
 			else
 				msg_printf $"Valid checksum: %s\n" "$file_name"
 			fi
