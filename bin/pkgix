@@ -893,6 +893,11 @@ source_pkg() { #{{{
 	# Don't set repo as local here, as it can then be used in the package
 	# description files to get information about its source repository, and 
 	# e.g., download extra files such as patches from the repository.
+	# The exception is if prefer_repo is set, in which case it is assumed that
+	# source_pkg is called from a package description file itself and repo must
+	# already be set.
+	[[ -n "$prefer_repo" ]] && local repo || :
+
 	for repo in "$prefer_repo" "${pkgix_repos[@]:+${pkgix_repos[@]}}"; do
 		[[ -z "$repo" ]] && continue || :
 		pkg_file="${repo}/$pkg_name"
