@@ -1024,6 +1024,7 @@ unset_sourced_pkg() { #{{{
 	unset check
 	unset installenv
 	unset postinstall
+	unset preremove
 	unset postremove
 	unset forceinstall
 	unset backup
@@ -1235,6 +1236,7 @@ db_install() { #{{{
 	# *remove functions should not make use of any other variables/functions in
 	# the package description file!
 	{
+		type -p preremove > /dev/null && declare -f preremove || :
 		type -p postremove > /dev/null && declare -f postremove || :
 	} > "$db_hooks_file"
 
@@ -1675,6 +1677,19 @@ pkg_remove() { #{{{
 	fi
 
 	msg_printf "${Cgrn}%s (%s)${Crst} "$"removing...\n" "$pkg_name" "$version"
+
+	if [[ -f "$db_hooks_file" ]]; then
+		(
+			source "$db_hooks_file"
+
+			if type -p preremove > /dev/null; then
+				msg_printf "${Cgrn}%s (%s)${Crst} "$"pre-remove hook...\n" "$pkg_name" "$version"
+				if ! sourced_pkg_call preremove "$pkgix_prefix"; then
+					warning_printf $"Pre-remove hook failed!\n"
+				fi
+			fi
+		)
+	fi
 
 	local backup_path
 	local backup_checksum
