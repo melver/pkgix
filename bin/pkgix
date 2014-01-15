@@ -953,6 +953,7 @@ source_pkg() { #{{{
 #     dest_prefix=${destdir}${prefix}
 #
 # Otherwise potentially useful variables which are available from parent scope:
+#     build_dir - absolute path to build-dir
 #     old_version - if package is being upgraded (see prefix_upgrade)
 #     repo - the URL where the package description file is located
 #
@@ -1020,6 +1021,7 @@ unset_sourced_pkg() { #{{{
 	unset provides
 	unset iscompat
 	unset isinstalled
+	unset prepare
 	unset build
 	unset check
 	unset installenv
@@ -1516,9 +1518,7 @@ pkg_install() { #{{{
 		# installed by the dependencies.
 		export_env "$pkgix_prefix" 1
 
-		msg_printf "${Cgrn}%s (%s)${Crst} "$"building...\n" "$pkg_name" "${version:-}"
-
-		local build_dir
+		#local build_dir # excplicitly allow to be read in called functions
 		local install_dir
 		if [[ -n "${PKGIX_BUILD_DIR:-}" ]]; then
 			build_dir="${PKGIX_BUILD_DIR}/${PROGNAME}-build"
@@ -1541,6 +1541,15 @@ pkg_install() { #{{{
 
 		trap "$trap_cmd" EXIT
 
+		# Run prepare if available
+		if type -p prepare > /dev/null; then
+			msg_printf "${Cgrn}%s (%s)${Crst} "$"preparing...\n" "$pkg_name" "${version:-}"
+			if ! sourced_pkg_call prepare "$pkgix_prefix" "$install_dir"; then
+				die $"Preparing build of '%s' failed! Aborting.\n" "$pkg_name"
+			fi
+		fi
+
+		msg_printf "${Cgrn}%s (%s)${Crst} "$"building...\n" "$pkg_name" "${version:-}"
 		if ! sourced_pkg_call build "$pkgix_prefix" "$install_dir"; then
 			die $"Building '%s' failed! Aborting.\n" "$pkg_name"
 		fi
