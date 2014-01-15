@@ -456,7 +456,9 @@ else
 		source "$db_info_file"
 
 		local dep_name_ver
-		for dep_name_ver in "${depends[@]:+${depends[@]}}" "${checkdepends[@]:+${checkdepends[@]}}"; do
+		for dep_name_ver in "${depends[@]:+${depends[@]}}" \
+		                    "${builddepends[@]:+${builddepends[@]}}" \
+		                    "${checkdepends[@]:+${checkdepends[@]}}"; do
 			__dep_topo_sort_visit "$pkgix_prefix" "${dep_name_ver%%[<>=]*}"
 		done
 
@@ -1018,6 +1020,7 @@ unset_sourced_pkg() { #{{{
 	unset website
 	unset description
 	unset depends
+	unset builddepends
 	unset checkdepends
 	unset provides
 	unset iscompat
@@ -1224,6 +1227,12 @@ db_install() { #{{{
 		done
 		printf " )\n"
 
+		printf "builddepends=("
+		for dep_name in "${builddepends[@]:+${builddepends[@]}}"; do
+			printf " '%s'" "$dep_name"
+		done
+		printf " )\n"
+
 		printf "checkdepends=("
 		for dep_name in "${checkdepends[@]:+${checkdepends[@]}}"; do
 			printf " '%s'" "$dep_name"
@@ -1271,6 +1280,7 @@ unset_db_info() { #{{{
 	unset website
 	unset license
 	unset depends
+	unset builddepends
 	unset checkdepends
 	unset provides
 	unset installdate
@@ -1499,7 +1509,9 @@ pkg_install() { #{{{
 				dep_additional=("${checkdepends[@]:+${checkdepends[@]}}")
 			fi
 
-			for dep_name_ver in "${depends[@]:+${depends[@]}}" "${dep_additional[@]:+${dep_additional[@]}}"; do
+			for dep_name_ver in "${depends[@]:+${depends[@]}}" \
+			                    "${builddepends[@]:+${builddepends[@]}}" \
+			                    "${dep_additional[@]:+${dep_additional[@]}}"; do
 				dep_name="${dep_name_ver%%[<>=]*}"
 				dep_cmp_version="${dep_name_ver##${dep_name}}"
 
@@ -1976,6 +1988,7 @@ cmd_avail() { #{{{
 						echo " Website      : ${website:-}"
 						echo " License      : ${license[*]:+${license[*]}}"
 						echo " Depends      : ${depends[*]:+${depends[*]}}"
+						echo " Build deps.  : ${builddepends[*]:+${builddepends[*]}}"
 						echo " Check deps.  : ${checkdepends[*]:+${checkdepends[*]}}"
 						echo " Provides     : ${provides[*]:+${provides[*]}}"
 					else
@@ -2024,9 +2037,9 @@ cmd_list() { #{{{
 						# Check if any package in any provided pkgix_prefix
 						# depends on the current package; if the current
 						# package is required, continue while loop. Note that
-						# checkdepends is ignored, as this allows to clean the
-						# system of packages which were installed only for
-						# checks.
+						# builddepends/checkdepends is ignored, as this allows
+						# to clean the system of packages which were installed
+						# only for build/check.
 
 						for _pkgix_prefix in "$@"; do
 							[[ -d "$_pkgix_prefix" ]] || continue && _pkgix_prefix="$(abspath "$_pkgix_prefix")"
@@ -2106,6 +2119,7 @@ cmd_show() { #{{{
 					echo " Website      : ${website:-}"
 					echo " License      : ${license[*]:+${license[*]}}"
 					echo " Depends      : ${depends[*]:+${depends[*]}}"
+					echo " Build deps.  : ${builddepends[*]:+${builddepends[*]}}"
 					echo " Check deps.  : ${checkdepends[*]:+${checkdepends[*]}}"
 					echo " Provides     : ${provides[*]:+${provides[*]}}"
 					echo " Install date : ${installdate:-}"
