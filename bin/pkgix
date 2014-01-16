@@ -2250,6 +2250,13 @@ prog_usage() { #{{{
 		printf -- $"    show       Show information about installed packages\n"
 		printf -- $"    showenv    Show prefix environment parameters\n"
 		printf -- $"    chenv      Switch to a prefix environment\n"
+
+		# Generate plugin-commands
+		compgen -c "${PROGNAME}-" |
+		while IFS= read -r plugin_cmd; do
+			printf -- "    %-10s %s\n" "${plugin_cmd#${PROGNAME}-}" "$($plugin_cmd _summary)"
+		done
+
 		echo
 		printf -- $"Options:\n"
 		printf -- $"\
@@ -2373,8 +2380,12 @@ repositories is displayed.\n"
 				printf -- $"Usage: %s %s <command>\n" "$PROGNAME" "$help_cmd"
 				;;
 			*)
-				printf -- $"Please specify valid command.\n"
-				exit $EXIT_INVALID_OPTION
+				if type -p "${PROGNAME}-${help_cmd}" > /dev/null;then
+					"${PROGNAME}-${help_cmd}" help
+				else
+					printf -- $"Please specify valid command.\n"
+					exit $EXIT_INVALID_OPTION
+				fi
 				;;
 		esac
 	fi
@@ -2636,8 +2647,20 @@ case "$cmd" in
 		prog_usage "$@"
 		;;
 	*)
-		prog_usage
-		exit $EXIT_INVALID_OPTION
+		# Check if this is a plugin
+		if type -p "${PROGNAME}-${cmd}" > /dev/null; then
+			PKGIX_PLUGIN="${cmd}"
+
+			if "${PROGNAME}-${cmd}" _source; then
+				source "$(type -p "${PROGNAME}-${cmd}")"
+			else
+				export PKGIX_PLUGIN
+				"${PROGNAME}-${cmd}" "$@" || exit $?
+			fi
+		else
+			prog_usage
+			exit $EXIT_INVALID_OPTION
+		fi
 		;;
 esac
 
