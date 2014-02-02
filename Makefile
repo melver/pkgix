@@ -28,6 +28,11 @@ $(LOCALEDIR)/%/LC_MESSAGES/$(PROGNAME).mo: po/%.po
 	mkdir -p $(shell dirname "$@")
 	$(MSGFMT) -o $@ $<
 
+.PHONY: check
+check:
+	tests/tests.sh runtests Makefile-check.log
+	$(RM) Makefile-check.log
+
 .PHONY: clean
 clean:
 	rm -rf $(LOCALEDIR)

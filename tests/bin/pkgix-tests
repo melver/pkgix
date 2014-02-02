@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+
+#
+# Copyright (C) 2014, Marco Elver <me@marcoelver.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+if [[ -z "$PKGIX_PLUGIN" ]]; then
+	case "$1" in
+		_summary)
+			echo "pkgix unit tests"
+			exit 0
+			;;
+		_source)
+			exit 0
+			;;
+		help) ;;
+		*)
+			echo "This is a pkgix plugin."
+			exit 42
+			;;
+	esac
+fi
+
+TEST_ROOT="$(cd "$(dirname "$(type -p "${PROGNAME}-${PKGIX_PLUGIN}")")/.." && pwd)"
+TEST_SCRIPTS="${TEST_ROOT}/test.d"
+TEST_REPOS="${TEST_ROOT}/repos"
+TEST_PREFIXES="/tmp/${PROGNAME}-tests"
+readonly TEST_SCRIPTS TEST_REPOS TEST_ROOT
+
+prefixsum() {
+	local pkgix_prefix="$1"
+	find_printbase "$pkgix_prefix" | sort |
+	while IFS= read -r path; do
+		echo "$path"
+		if [[ ! -d "${pkgix_prefix}/${path}" ]]; then
+			cat "${pkgix_prefix}/${path}"
+		fi
+	done | digest sha256 - 
+}
+
+verify() {
+	local pkgix_prefix="$1"
+	local want_prefixsum="$2"
+	local has_prefixsum="$(prefixsum "$pkgix_prefix")"
+
+	if [[ "$has_prefixsum" != "$want_prefixsum" ]]; then
+		die "Prefixsums do not match: has %s, want %s\n" \
+			"$has_prefixsum" "$want_prefixsum"
+	fi
+
+	return $RET_OK
+}
+
+test_call() {
+	local want_exitcode="$1"
+	shift
+
+	if "$@" &>> "$logfile"; then
+		has_exitcode=$?
+	else
+		has_exitcode=$?
+	fi
+
+	if (( want_exitcode != has_exitcode )); then
+		die "Exit code does not match %s: (%s) %s\n" \
+			"$want_exitcode" "$has_exitcode" "$*"
+	fi
+}
+
+test_comment() {
+	echo "##" "$@" >> "$logfile"
+}
+
+verify_log() {
+	local want_logchecksum="${1:-}"
+	local has_logchecksum="$(digest sha256 "$logfile")"
+
+	if [[ "$has_logchecksum" != "$want_logchecksum" ]]; then
+		warning_printf "Log checksums do not match: has %s, want %s\n" \
+			"$has_logchecksum" "$want_logchecksum"
+	fi
+}
+
+runtests() {
+	logfile="${1:-}"
+
+	if [[ -z "$logfile" ]]; then
+		die "Please specify logfile.\n"
+	fi
+
+	logfile="$(abspath "$logfile")"
+	echo "BEGIN $PROGNAME TESTS" > "$logfile"
+
+	msg_printf "begin unit tests.\n"
+
+	if [[ -d "$TEST_PREFIXES" ]]; then
+		warning_printf "$TEST_PREFIXES exists, removing.\n"
+		rm -rf "$TEST_PREFIXES"
+	fi
+
+	if ! mkdir "$TEST_PREFIXES"; then
+		die "Could not create $TEST_PREFIXES\n"
+	fi
+
+	cd "$TEST_PREFIXES"
+	for t in "${TEST_SCRIPTS}"/*; do
+		msg_printf "testing ${Cgrn}%s${Crst}\n" "${t##${TEST_SCRIPTS}/}"
+		echo "---------[ ${t##${TEST_SCRIPTS}/} ]---------" >> "$logfile"
+		if [[ -x "$t" ]]; then
+			( source "$t" ) || die "${Cgrn}%s${Crst}\n" "${t##${TEST_SCRIPTS}/}"
+		fi
+	done
+
+	rm -rf "$TEST_PREFIXES"
+	echo "END $PROGNAME TESTS" >> "$logfile"
+	msg_printf "all tests passed.\n"
+}
+
+cmd="${1:-}"
+shift || :
+
+case "$cmd" in
+	prefixsum) prefixsum "$@" ;;
+	testenv) cmd_chenv ;;
+	runtests) runtests "$@" ;;
+	help|*)
+		echo "Usage: pkgix tests {prefixsum|testenv|runtests}"
+		exit $EXIT_OK
+		;;
+esac
+

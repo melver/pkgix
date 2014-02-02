@@ -1,0 +1,24 @@
+
+version=1.0
+description="Example"
+depends=()
+website="http://example.org"
+license=('GPL')
+
+isinstalled() {
+	return 1
+}
+
+iscompat() {
+	return 0
+}
+
+build() {
+	echo "EXAMPLE" > example
+}
+
+installenv() {
+	install -Dm644 example "${dest_prefix%/}/usr/bin/example"
+}
+
+# vim: set ft=sh :
