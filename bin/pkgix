@@ -93,7 +93,11 @@ abspath() { #{{{
 		if [[ -d "$path" ]]; then
 			path="$( cd "$path" && pwd )"
 		elif [[ -f "$path" ]]; then
-			path="$( cd "${path%/*}" && pwd )/${path##*/}"
+			if [[ "${path}" =~ "/" ]]; then
+				path="$( cd "${path%/*}" && pwd )/${path##*/}"
+			else
+				path="$(pwd)/${path}"
+			fi
 		else
 			# Doesn't seem to exist, try best guess
 			if [[ "${path:0:1}" == "/" ]]; then
