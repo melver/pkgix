@@ -2155,7 +2155,9 @@ cmd_show() { #{{{
 cmd_chenv() { #{{{
 	local pkgix_prefix
 	for pkgix_prefix in "$@"; do
-		export_env "$pkgix_prefix"
+		if ! export_env "$pkgix_prefix"; then
+			die $"'%s' is not a valid directory!\n" "$pkgix_prefix"
+		fi
 	done
 
 	msg_printf $"Spawning shell\n"
