@@ -91,10 +91,10 @@ abspath() { #{{{
 		[[ -n "$_path" ]] && path="$_path" || :
 
 		if [[ -d "$path" ]]; then
-			path="$( cd "$path" && pwd )"
+			path="$( cd -- "$path" && pwd )"
 		elif [[ -f "$path" ]]; then
 			if [[ "${path}" =~ "/" ]]; then
-				path="$( cd "${path%/*}" && pwd )/${path##*/}"
+				path="$( cd -- "${path%/*}" && pwd )/${path##*/}"
 			else
 				path="$(pwd)/${path}"
 			fi
@@ -306,7 +306,7 @@ in_list() { #{{{
 # realpath.
 #
 resolv_dir_symlink() { #{{{
-	( cd "$1" && pwd -P )
+	( cd -- "$1" && pwd -P )
 } #}}}
 
 #============================================================================
@@ -609,7 +609,7 @@ fetch() { #{{{
 		if [[ "$url" =~ ^/ ]]; then
 			# Is a local path, just copy
 			msg_printf $"Copying '%s'...\n" "$url"
-			if ! cp "$url" "$file_name" &> /dev/null; then
+			if ! cp -- "$url" "$file_name" &> /dev/null; then
 				die $"Copying '%s' failed!\n" "$url"
 			fi
 		else
@@ -1349,7 +1349,7 @@ db_list_installed() { #{{{
 
 	if [[ -f "$db_file" ]]; then
 		if (( from_backup )); then
-			cp "$db_file" "${db_file}.bak"
+			cp -- "$db_file" "${db_file}.bak"
 			db_file="${db_file}.bak"
 		fi
 
@@ -1668,7 +1668,7 @@ pkg_install() { #{{{
 
 		# Perform actual installation
 		if [[ -d "${install_prefix}" ]]; then
-			cp -a "${install_prefix%/}"/* "${pkgix_prefix}"
+			cp -a -- "${install_prefix%/}"/* "${pkgix_prefix}"
 		fi
 
 		db_install "$pkgix_prefix" "$pkg_name" "$reason" \
