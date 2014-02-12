@@ -61,6 +61,8 @@ verify() {
 			"$has_prefixsum" "$want_prefixsum"
 	fi
 
+	echo "## Prefixsums match" >> "$logfile"
+
 	return $RET_OK
 }
 
@@ -89,7 +91,7 @@ verify_log() {
 	local has_logchecksum="$(digest sha256 "$logfile")"
 
 	if [[ "$has_logchecksum" != "$want_logchecksum" ]]; then
-		warning_printf "Log checksums do not match: has %s, want %s\n" \
+		die "Log checksums do not match: has %s, want %s\n" \
 			"$has_logchecksum" "$want_logchecksum"
 	fi
 }
