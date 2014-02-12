@@ -61,8 +61,6 @@ verify() {
 			"$has_prefixsum" "$want_prefixsum"
 	fi
 
-	echo "## Prefixsums match" >> "$logfile"
-
 	return $RET_OK
 }
 
