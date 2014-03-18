@@ -695,13 +695,10 @@ prompt_continue() { #{{{
 # valid in this session, but can be used to provide extra variables to
 # package description files.
 #
-__prefix_rc_sourced=0
 source_prefix_rc() { #{{{
-	(( __prefix_rc_sourced )) && return || :
 	local pkgix_prefix="$1"
 	[[ ! -r "${pkgix_prefix%/}/etc/${PROGNAME}rc" ]] && return || :
 	source "${pkgix_prefix%/}/etc/${PROGNAME}rc"
-	__prefix_rc_sourced=1
 } #}}}
 
 #============================================================================
@@ -713,8 +710,6 @@ export_env() { #{{{
 	local reset="${2:-0}"
 
 	[[ ! -d "$pkgix_prefix" ]] && return $RET_ERR
-
-	source_prefix_rc "$pkgix_prefix"
 
 	if (( ! __old_env_saved )); then
 		__old_env_saved=1
@@ -800,8 +795,9 @@ export_env() { #{{{
 		else
 			export CPATH="${base_path}/include:$CPATH"
 		fi
-
 	done
+
+	source_prefix_rc "$pkgix_prefix"
 
 	return $RET_OK
 } #}}}
