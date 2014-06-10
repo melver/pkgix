@@ -1664,7 +1664,9 @@ pkg_install() { #{{{
 
 		# Perform actual installation
 		if [[ -d "${install_prefix}" ]]; then
-			cp -a -- "${install_prefix%/}"/* "${pkgix_prefix}"
+			if ! cp -a -- "${install_prefix%/}"/* "${pkgix_prefix}"; then
+				die $"Installation of '%s' failed! Aborting.\n" "$pkg_name"
+			fi
 		fi
 
 		db_install "$pkgix_prefix" "$pkg_name" "$reason" \
