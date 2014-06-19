@@ -1437,7 +1437,7 @@ pkg_install() { #{{{
 		fi
 	fi
 
-	msg_printf "${CcynB}=> %s${Crst}\n" "$pkg_name"
+	verbose_printf "${CcynB}=> %s${Crst}\n" "$pkg_name"
 
 	(
 		export_env "$pkgix_prefix" 1
@@ -1483,7 +1483,7 @@ pkg_install() { #{{{
 
 		if (( ! is_reinstall )) && sourced_pkg_call isinstalled "$pkgix_prefix"; then
 			if (( ! arg_reinstall )) || [[ "$reason" != "$REASON_EXPLICIT" ]]; then
-				msg_printf $"'%s' already available outside of '%s', skipping...\n" "$pkg_name" "$pkgix_prefix"
+				verbose_printf $"'%s' already available outside of '%s', skipping...\n" "$pkg_name" "$pkgix_prefix"
 				exit $EXIT_OK
 			else
 				msg_printf $"Forcing installation of '%s', despite already available outside of '%s'...\n" "$pkg_name" "$pkgix_prefix"
