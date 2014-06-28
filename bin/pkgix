@@ -699,6 +699,7 @@ source_prefix_rc() { #{{{
 	local pkgix_prefix="$1"
 	[[ ! -r "${pkgix_prefix%/}/etc/${PROGNAME}rc" ]] && return || :
 	source "${pkgix_prefix%/}/etc/${PROGNAME}rc"
+	pkgix_prefix_rcs+=("${pkgix_prefix%/}/etc/${PROGNAME}rc")
 } #}}}
 
 #============================================================================
@@ -827,6 +828,7 @@ cmd_showenv() { #{{{
 
 	(( arg_debug )) && { show_platform_vars; } || :
 
+	local source_cmd
 	case "$PKGIX_SHELL" in
 		*csh)
 			[[ -n "${PKGIX_PREFIX:-}" ]] && echo "setenv PKGIX_PREFIX \"$PKGIX_PREFIX\"" || :
@@ -835,6 +837,7 @@ cmd_showenv() { #{{{
 			[[ -n "${LIBRARY_PATH:-}" ]] && echo "setenv LIBRARY_PATH \"$LIBRARY_PATH\"" || :
 			[[ -n "${PKG_CONFIG_PATH:-}" ]] && echo "setenv PKG_CONFIG_PATH \"$PKG_CONFIG_PATH\"" || :
 			[[ -n "${CPATH:-}" ]] && echo "setenv CPATH \"$CPATH\"" || :
+			source_cmd="source"
 			;;
 		*)
 			# Assume sh compatible shell (bash, zsh, ..)
@@ -844,8 +847,14 @@ cmd_showenv() { #{{{
 			[[ -n "${LIBRARY_PATH:-}" ]] && echo "export LIBRARY_PATH=\"$LIBRARY_PATH\"" || :
 			[[ -n "${PKG_CONFIG_PATH:-}" ]] && echo "export PKG_CONFIG_PATH=\"$PKG_CONFIG_PATH\"" || :
 			[[ -n "${CPATH:-}" ]] && echo "export CPATH=\"$CPATH\"" || :
+			source_cmd="source"
 			;;
 	esac
+
+	local rcfile
+	for rcfile in "${pkgix_prefix_rcs[@]:+${pkgix_prefix_rcs[@]}}"; do
+		echo "${source_cmd} \"${rcfile}\""
+	done
 } #}}}
 
 #============================================================================
@@ -2495,6 +2504,8 @@ get_real_cmd() { #{{{
 # MAIN
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # {{{
+
+pkgix_prefix_rcs=()
 
 reset_traps
 
