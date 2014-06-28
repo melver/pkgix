@@ -18,4 +18,4 @@ test_comment "List installed packages."
 test_call $EXIT_OK pkgix -n list simple
 
 verify simple 573576b0da634f7b4737f501143bd44483439bb04483473070b4b1f6d5f1cd9b
-verify_log    17e7b6250654393dc105aa350cbb72c73ff7ff23b9f4c3cc61d9fe4771dde833
+verify_log    fa0b42848fb5bbc53e39014feb4626fd98c4785df2d1329dec2b99d551836210
