@@ -699,7 +699,14 @@ source_prefix_rc() { #{{{
 	local pkgix_prefix="$1"
 	[[ ! -r "${pkgix_prefix%/}/etc/${PROGNAME}rc" ]] && return || :
 	source "${pkgix_prefix%/}/etc/${PROGNAME}rc"
-	pkgix_prefix_rcs+=("${pkgix_prefix%/}/etc/${PROGNAME}rc")
+
+	# Export the list of sourced RC-files, to have the list remain accessible
+	# inside a chenv.
+	if [[ -z "${_PKGIX_PREFIX_RCS:-}" ]]; then
+		export _PKGIX_PREFIX_RCS="${pkgix_prefix%/}/etc/${PROGNAME}rc"
+	else
+		export _PKGIX_PREFIX_RCS="${pkgix_prefix%/}/etc/${PROGNAME}rc:${_PKGIX_PREFIX_RCS:-}"
+	fi
 } #}}}
 
 #============================================================================
@@ -720,6 +727,7 @@ export_env() { #{{{
 		__old_LIBRARY_PATH="${LIBRARY_PATH:-}"
 		__old_PKG_CONFIG_PATH="${PKG_CONFIG_PATH:-}"
 		__old_CPATH="${CPATH:-}"
+		__old__PKGIX_PREFIX_RCS="${_PKGIX_PREFIX_RCS:-}"
 	elif (( reset )); then
 		reset_env
 	fi
@@ -814,6 +822,7 @@ reset_env() {
 		[[ -n "${__old_LIBRARY_PATH}" ]] && export LIBRARY_PATH="${__old_LIBRARY_PATH}" || unset LIBRARY_PATH
 		[[ -n "${__old_PKG_CONFIG_PATH}" ]] && export PKG_CONFIG_PATH="${__old_PKG_CONFIG_PATH}" || unset PKG_CONFIG_PATH
 		[[ -n "${__old_CPATH}" ]] && export CPATH="${__old_CPATH}" || unset CPATH
+		[[ -n "${__old__PKGIX_PREFIX_RCS}" ]] && export _PKGIX_PREFIX_RCS="${__old__PKGIX_PREFIX_RCS}" || unset _PKGIX_PREFIX_RCS
 	fi
 }
 
@@ -851,10 +860,14 @@ cmd_showenv() { #{{{
 			;;
 	esac
 
-	local rcfile
-	for rcfile in "${pkgix_prefix_rcs[@]:+${pkgix_prefix_rcs[@]}}"; do
-		echo "${source_cmd} \"${rcfile}\""
-	done
+	if [[ -n "${_PKGIX_PREFIX_RCS:-}" ]]; then
+		local pkgix_prefix_rcs
+		local rcfile
+		IFS=":" read -ra pkgix_prefix_rcs <<< "${_PKGIX_PREFIX_RCS}"
+		for rcfile in "${pkgix_prefix_rcs[@]}"; do
+			echo "${source_cmd} \"${rcfile}\""
+		done
+	fi
 } #}}}
 
 #============================================================================
@@ -2504,8 +2517,6 @@ get_real_cmd() { #{{{
 # MAIN
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # {{{
-
-pkgix_prefix_rcs=()
 
 reset_traps
 
