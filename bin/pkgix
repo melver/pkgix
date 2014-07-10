@@ -1505,7 +1505,11 @@ pkg_install() { #{{{
 
 		if (( ! is_reinstall )) && sourced_pkg_call isinstalled "$pkgix_prefix"; then
 			if (( ! arg_reinstall )) || [[ "$reason" != "$REASON_EXPLICIT" ]]; then
-				verbose_printf $"'%s' already available outside of '%s', skipping...\n" "$pkg_name" "$pkgix_prefix"
+				local which_printf
+				[[ "$reason" == "$REASON_EXPLICIT" ]] \
+					&& which_printf=msg_printf \
+					|| which_printf=verbose_printf
+				$which_printf $"'%s' already available outside of '%s', skipping...\n" "$pkg_name" "$pkgix_prefix"
 				exit $EXIT_OK
 			else
 				msg_printf $"Forcing installation of '%s', despite already available outside of '%s'...\n" "$pkg_name" "$pkgix_prefix"
