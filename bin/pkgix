@@ -2454,6 +2454,17 @@ expand_short_opts() { #{{{
 # command wrapper
 #
 run_cmd() { #{{{
+	local cmd_prefix
+
+	# Check if the command we run is overridden by a plugin
+	if type -p "${PROGNAME}-plugin-${cmd}" > /dev/null; then
+		PKGIX_PLUGIN="${cmd}"
+		source "$(type -p "${PROGNAME}-plugin-${cmd}")"
+		cmd_prefix=cmd_plugin
+	else
+		cmd_prefix=cmd
+	fi
+
 	case "$cmd" in
 		install|remove)
 			if [[ -z "${PKGIX_PREFIX:-}" ]]; then
@@ -2461,12 +2472,12 @@ run_cmd() { #{{{
 					die $"You need to specify a prefix!\n"
 				fi
 
-				cmd_$cmd "$@"
+				${cmd_prefix}_$cmd "$@"
 			else
 				# Commands which can only accept one prefix, pass first one only
 				# Remove leading ':'
 				local args_prefix="${PKGIX_PREFIX##:}"
-				cmd_$cmd "${args_prefix%%:*}" "$@"
+				${cmd_prefix}_$cmd "${args_prefix%%:*}" "$@"
 			fi
 			;;
 		upgrade|list|show|showenv|chenv)
@@ -2481,19 +2492,19 @@ run_cmd() { #{{{
 						;;
 				esac
 
-				cmd_$cmd "$@"
+				${cmd_prefix}_$cmd "$@"
 			else
 				local -a args_prefix
 				IFS=":" read -ra args_prefix <<< "$PKGIX_PREFIX"
 
 				case "$cmd" in
-					show|upgrade) cmd_$cmd "${args_prefix[@]}" -- "$@" ;;
-					*) cmd_$cmd "${args_prefix[@]}" "$@" ;;
+					show|upgrade) ${cmd_prefix}_$cmd "${args_prefix[@]}" -- "$@" ;;
+					*) ${cmd_prefix}_$cmd "${args_prefix[@]}" "$@" ;;
 				esac
 			fi
 			;;
 		avail)
-			cmd_$cmd "$@"
+			${cmd_prefix}_$cmd "$@"
 			;;
 		*)
 			die $"Unknown command: %s\n" "$cmd"
