@@ -1556,7 +1556,9 @@ pkg_install() { #{{{
 				pkg_install "$pkgix_prefix" "$dep_name" 0 "$REASON_DEPENDENCY"
 			done
 		else
-			warning_printf $"Ignoring dependencies.\n"
+			# arg_nodeps can be set to anything larger than 1 by a plugin to
+			# suppress this message.
+			(( arg_nodeps == 1 )) && warning_printf $"Ignoring dependencies.\n" || :
 		fi
 
 		if (( arg_dry_run )); then
