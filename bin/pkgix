@@ -1908,8 +1908,9 @@ prefix_upgrade() { #{{{
 				verbose_printf "${CcynB}=> %s (%s)${Crst} "$"is up to date\n" "$pkg_name" "$old_version"
 			fi
 		) || exit $?  # Break out of pipe-subshell
-	done || {	unlock_prefix "$pkgix_prefix" ;
-				return $? ; } # Take return code if pipe-subshell exited with errors
+	done || {	local ret_code=$? ; # Take return code if pipe-subshell exited with errors
+				unlock_prefix "$pkgix_prefix" ;
+				return $ret_code ; }
 
 	msg_printf $"done upgrading.\n"
 
