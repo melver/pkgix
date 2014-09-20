@@ -775,15 +775,18 @@ export_env() { #{{{
 			export LD_RUN_PATH="${library_path}:$LD_RUN_PATH"
 		fi
 
-		# LD_RUN_PATH needs to be set for compilation even if the path does
-		# not exist yet, as a package might install its own library in a
-		# non-existent base-path and this needs to be encoded in the binaries;
-		# the other variables are only useful if the paths they refer to exist.
-		[[ ! -d "$_base_path" ]] && continue || :
-
 		# Prepending to PATH
 		export PATH="${base_path}/bin:${PATH:-}"
 		export PATH="${base_path}/sbin:${PATH:-}"
+
+		# LD_RUN_PATH needs to be set for compilation even if the path does
+		# not exist yet, as a package might install its own library in a
+		# non-existent base-path and this needs to be encoded in the binaries;
+		#
+		# PATH may be needed in postinstall hooks;
+		#
+		# below variables should only be useful if paths they refer to exist.
+		[[ ! -d "$_base_path" ]] && continue || :
 
 		# And make the linker look in the right paths (-L)
 		if [[ -z "${LIBRARY_PATH:-}" ]]; then
