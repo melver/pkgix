@@ -36,7 +36,7 @@ fi
 
 TEST_ROOT="$(cd "$(dirname "$(type -p "${PROGNAME}-${PKGIX_PLUGIN}")")/.." && pwd)"
 TEST_SCRIPTS="${TEST_ROOT}/test.d"
-TEST_REPOS="${TEST_ROOT}/repos"
+TEST_REPOS="repos"
 TEST_PREFIXES="/tmp/${PROGNAME}-tests"
 readonly TEST_SCRIPTS TEST_REPOS TEST_ROOT
 
@@ -115,7 +115,9 @@ runtests() {
 		die "Could not create $TEST_PREFIXES\n"
 	fi
 
-	cd "$TEST_PREFIXES"
+	pushd "$TEST_PREFIXES" > /dev/null
+	ln -s "${TEST_ROOT}/${TEST_REPOS}" "${TEST_REPOS}"
+
 	for t in "${TEST_SCRIPTS}"/*; do
 		msg_printf "testing ${Cgrn}%s${Crst}\n" "${t##${TEST_SCRIPTS}/}"
 		echo "---------[ ${t##${TEST_SCRIPTS}/} ]---------" >> "$logfile"
@@ -124,7 +126,9 @@ runtests() {
 		fi
 	done
 
+	popd > /dev/null
 	rm -rf "$TEST_PREFIXES"
+
 	echo "END $PROGNAME TESTS" >> "$logfile"
 	msg_printf "all tests passed.\n"
 }
