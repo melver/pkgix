@@ -3,7 +3,7 @@
 #
 # pkgix: Prefix environment and simple package management tool.
 #
-# Copyright (C) 2012-2014, Marco Elver <me@marcoelver.com>
+# Copyright (C) 2012-2015, Marco Elver <me@marcoelver.com>
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -549,9 +549,78 @@ extract_archive() { #{{{
 fetch_remote() { #{{{
 	local url="$1"
 	local file_name="$2"
-	local fetch_cmd
-	printf -v fetch_cmd -- "$PKGIX_FETCH" "$file_name"
-	$fetch_cmd "$url"
+
+	# Set up common vars
+	case "$url" in
+		git+*|hg+*|svn+*)
+			local repo_url="${url#@(git|hg|svn)+}"
+			repo_url="${repo_url%%#*}"
+
+			local fragment="${url#*#}"
+			if [[ "${fragment}" == "${url}" ]]; then
+				fragment=
+			fi
+			;;
+		*) ;;
+	esac
+
+	# Fetch
+	case "$url" in
+		git+*)
+			git clone "${repo_url}" "${file_name}" || return $RET_ERR
+			if [[ -n "$fragment" ]]; then
+				local ref
+				case "${fragment%%=*}" in
+					commit|tag)
+						ref="${fragment##*=}"
+						;;
+					branch)
+						ref="origin/${fragment##*=}"
+						;;
+					*)
+						die $"Unrecognized reference: %s\n" "$fragment"
+						;;
+				esac
+
+				( cd "${file_name}" && git checkout "$ref" ) || return $RET_ERR
+			fi
+			;;
+		hg+*)
+			local ref=tip
+			if [[ -n "$fragment" ]]; then
+				case "${fragment%%=*}" in
+					branch|revision|tag)
+						ref="${fragment##*=}"
+						;;
+					*)
+						die $"Unrecognized reference: %s\n" "$fragment"
+						;;
+				esac
+			fi
+
+			hg clone -u "$ref" "${repo_url}" "${file_name}" || return $RET_ERR
+			;;
+		svn+*)
+			local ref=HEAD
+			if [[ -n "$fragment" ]]; then
+				case "${fragment%%=*}" in
+					revision)
+						ref="${fragment##*=}"
+						;;
+					*)
+						die $"Unrecognized reference: %s\n" "$fragment"
+						;;
+				esac
+			fi
+
+			svn checkout -r "$ref" "${repo_url}" "${file_name}" || return $RET_ERR
+			;;
+		*)
+			local fetch_cmd
+			printf -v fetch_cmd -- "$PKGIX_FETCH" "$file_name"
+			$fetch_cmd "$url" || return $RET_ERR
+			;;
+	esac
 } #}}}
 
 #============================================================================
@@ -595,17 +664,37 @@ verify_checksum() { #{{{
 } #}}}
 
 #============================================================================
+# get_fetch_target url
+# Returns filename in URL.
+#
+get_fetch_target() { #{{{
+	local url="$1"
+	local target="${url%%#*}"
+	target="${target%%"?"*}"
+	target="${target##*/}"
+
+	case "$url" in
+		git+*)
+			target="${target%%.git}"
+			;;
+		*) ;;
+	esac
+
+	echo "$target"
+} #}}}
+
+#============================================================================
 # fetch url [checksum] [file_name]
 # Function for use in package description files.
 #
 fetch() { #{{{
 	local url="${1:-}"
 	local checksum="${2:-}"
-	local file_name="${3:-${url##*/}}"
+	local file_name="${3:-$(get_fetch_target "$url")}"
 
 	[[ -z "$url" ]] && die $"Invalid URL\n" || :
 
-	if [[ ! -f "$file_name" ]]; then
+	if [[ ! -e "$file_name" ]]; then
 		if [[ "$url" =~ ^/ ]]; then
 			# Is a local path, just copy
 			msg_printf $"Copying '%s'...\n" "$url"
@@ -620,7 +709,10 @@ fetch() { #{{{
 		fi
 	fi
 
-	verify_checksum "$checksum" "$file_name"
+	# If file is a folder, ignore.
+	if [[ ! -d "$file_name" ]]; then
+		verify_checksum "$checksum" "$file_name"
+	fi
 } #}}}
 
 #============================================================================
@@ -630,7 +722,7 @@ fetch() { #{{{
 fetch_extract() { #{{{
 	local url="${1:-}"
 	local checksum="${2:-}"
-	local archive_name="${3:-${url##*/}}"
+	local archive_name="${3:-$(get_fetch_target "$url")}"
 
 	fetch "$url" "$checksum" "$archive_name"
 	extract_archive "$archive_name"
@@ -2261,7 +2353,7 @@ reset_traps() { #{{{
 prog_version() { #{{{
 	echo "$PROGNAME $PROG_VERSION"
 	echo
-	echo "Copyright (C) 2012-2014, Marco Elver <me@marcoelver.com>"
+	echo "Copyright (C) 2012-2015, Marco Elver <me@marcoelver.com>"
 	echo
 	echo "This is free software; see the source for copying conditions."
 	echo "There is NO WARRANTY, to the extent permitted by law."
