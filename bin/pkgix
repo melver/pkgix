@@ -3,7 +3,7 @@
 #
 # pkgix: Prefix environment and simple package management tool.
 #
-# Copyright (C) 2012-2015, Marco Elver <me@marcoelver.com>
+# Copyright (C) 2012-2016, Marco Elver <me@marcoelver.com>
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -552,33 +552,35 @@ fetch_remote() { #{{{
 
 	# Set up common vars
 	case "$url" in
-		git+*|hg+*|svn+*)
+		git+*|git://*|hg+*|svn+*)
 			local repo_url="${url#@(git|hg|svn)+}"
 			repo_url="${repo_url%%#*}"
 
-			local fragment="${url#*#}"
-			if [[ "${fragment}" == "${url}" ]]; then
-				fragment=
+			local meta="${url#*#}"
+			if [[ "${meta}" == "${url}" ]]; then
+				meta=
 			fi
+
+			verbose_printf $"Found special URL: %s, META: %s\n" "$repo_url" "$meta"
 			;;
 		*) ;;
 	esac
 
 	# Fetch
 	case "$url" in
-		git+*)
+		git+*|git://*)
 			git clone "${repo_url}" "${file_name}" || return $RET_ERR
-			if [[ -n "$fragment" ]]; then
+			if [[ -n "$meta" ]]; then
 				local ref
-				case "${fragment%%=*}" in
+				case "${meta%%=*}" in
 					commit|tag)
-						ref="${fragment##*=}"
+						ref="${meta##*=}"
 						;;
 					branch)
-						ref="origin/${fragment##*=}"
+						ref="origin/${meta##*=}"
 						;;
 					*)
-						die $"Unrecognized reference: %s\n" "$fragment"
+						die $"Unrecognized reference: %s\n" "$meta"
 						;;
 				esac
 
@@ -587,13 +589,13 @@ fetch_remote() { #{{{
 			;;
 		hg+*)
 			local ref=tip
-			if [[ -n "$fragment" ]]; then
-				case "${fragment%%=*}" in
+			if [[ -n "$meta" ]]; then
+				case "${meta%%=*}" in
 					branch|revision|tag)
-						ref="${fragment##*=}"
+						ref="${meta##*=}"
 						;;
 					*)
-						die $"Unrecognized reference: %s\n" "$fragment"
+						die $"Unrecognized reference: %s\n" "$meta"
 						;;
 				esac
 			fi
@@ -602,13 +604,13 @@ fetch_remote() { #{{{
 			;;
 		svn+*)
 			local ref=HEAD
-			if [[ -n "$fragment" ]]; then
-				case "${fragment%%=*}" in
+			if [[ -n "$meta" ]]; then
+				case "${meta%%=*}" in
 					revision)
-						ref="${fragment##*=}"
+						ref="${meta##*=}"
 						;;
 					*)
-						die $"Unrecognized reference: %s\n" "$fragment"
+						die $"Unrecognized reference: %s\n" "$meta"
 						;;
 				esac
 			fi
@@ -2353,7 +2355,7 @@ reset_traps() { #{{{
 prog_version() { #{{{
 	echo "$PROGNAME $PROG_VERSION"
 	echo
-	echo "Copyright (C) 2012-2015, Marco Elver <me@marcoelver.com>"
+	echo "Copyright (C) 2012-2016, Marco Elver <me@marcoelver.com>"
 	echo
 	echo "This is free software; see the source for copying conditions."
 	echo "There is NO WARRANTY, to the extent permitted by law."
