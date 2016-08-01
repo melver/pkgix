@@ -181,7 +181,7 @@ TEXTDOMAINDIR="$(abspath "${0%/*}/../share/locale")"
 # Check if color is enabled and we have stderr/in on terminal
 if [[ "$PKGIX_COLOR" != "0" && -t 2 && -t 1 ]]; then # {{{
 	# Check if we have tput
-	if type -p tput > /dev/null; then
+	if type -p tput > /dev/null && tput -V 2>&1 | grep -q "ncurses"; then
 		Crst="$(tput sgr0)"
 		Cred="$(tput setaf 1)"
 		Cgrn="$(tput setaf 2)"
