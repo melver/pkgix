@@ -12,6 +12,3 @@ This may need further expanding.
 
 - pkgix should be minimal; goal is below 3000 LOC.
 
-See also:
-http://git.kernel.org/?p=git/git.git;a=blob;f=Documentation/SubmittingPatches
-
